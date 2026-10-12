@@ -8,8 +8,8 @@ Covers the three resolution paths for base_dir:
 
 from pathlib import Path
 
-import yaml
 import pytest
+import yaml
 
 from docpipe.core.projects.adapters.repositories.local.local_project_repository import (
     LocalProjectRepository,
@@ -18,7 +18,6 @@ from docpipe.core.projects.factories.project_repository_factory import (
     ENV_PROJECT_REPOSITORY_BASE_DIR,
     ProjectRepositoryFactory,
 )
-
 from docpipe.utils.infrastructure.config_utils import DocpipeConfigLoader
 
 

@@ -15,8 +15,8 @@ from docpipe.core.projects.adapters.repositories.local.local_project_repository 
     LocalProjectRepository,
 )
 from docpipe.core.projects.domain.ports.project_repository import ProjectRepository
-from docpipe.utils.infrastructure.logging import get_logger
 from docpipe.utils.infrastructure.config_utils import DocpipeConfigLoader
+from docpipe.utils.infrastructure.logging import get_logger
 
 logger = get_logger()
 

@@ -109,7 +109,7 @@ class JobManagementFactory:
         self._job_stats_service: JobStatsService | None = None
         self._job_management_service: JobManagementService | None = None
 
-        logger.info(f"JobManagementFactory initialized: storage={storage_backend}, framework={framework_type}")
+        logger.info("JobManagementFactory initialized: storage=%s, framework=%s", storage_backend, framework_type)
 
     def initialize_storage(self) -> None:
         """
@@ -240,10 +240,10 @@ class JobManagementFactory:
                     lock_timeout=lock_timeout,
                 )
                 logger.info(
-                    "Created JsonJobStatsStore: "
-                    f"base_dir={resolved_base_dir}, "
-                    f"base_dir_source={'env' if base_dir_override else 'config' if configured_base_dir else 'default'}, "
-                    f"lock_timeout={lock_timeout}s"
+                    "Created JsonJobStatsStore: base_dir=%s, base_dir_source=%s, lock_timeout=%ss",
+                    resolved_base_dir,
+                    "env" if base_dir_override else "config" if configured_base_dir else "default",
+                    lock_timeout,
                 )
 
             case StorageBackend.POSTGRESQL:

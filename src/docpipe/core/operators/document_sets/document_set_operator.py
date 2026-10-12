@@ -11,8 +11,8 @@ from typing import Any
 import pyarrow as pa
 
 from docpipe.core.assets.common import adapters as common_adapters  # noqa: F401
-from docpipe.core.assets.common.factories.attachment_repository_factory import AttachmentRepositoryFactory
 from docpipe.core.assets.common.factories.asset_repository_factory import AssetRepositoryFactory
+from docpipe.core.assets.common.factories.attachment_repository_factory import AttachmentRepositoryFactory
 from docpipe.core.assets.document_sets import adapters  # noqa: F401
 from docpipe.core.assets.document_sets.application.services.document_set_service import DocumentSetService
 from docpipe.core.assets.document_sets.domain.models.document_set import DocumentSet
