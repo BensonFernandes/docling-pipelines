@@ -5,15 +5,15 @@ asset-related components based on configuration.
 """
 
 from docpipe.core.assets.common.factories.attachment_repository_factory import AttachmentRepositoryFactory
-from docpipe.core.assets.common.factories.repository_factory import (
+from docpipe.core.assets.common.factories.asset_repository_factory import (
     AbstractRepositoryType,
-    RepositoryFactory,
+    AssetRepositoryFactory,
     RepositoryType,
 )
 
 __all__ = [
     "AbstractRepositoryType",
     "AttachmentRepositoryFactory",
-    "RepositoryFactory",
+    "AssetRepositoryFactory",
     "RepositoryType",
 ]

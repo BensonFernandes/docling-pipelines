@@ -11,7 +11,6 @@ Features:
 - Atomic writes with temporary files
 """
 
-import os
 import shutil
 from pathlib import Path
 from typing import Any
@@ -22,7 +21,6 @@ import pyarrow.parquet as pq
 from filelock import FileLock, Timeout
 
 from docpipe.core.incremental_metadata.adapters.config.incremental_metadata_factory import (
-    ENV_INCREMENTAL_BASE_DIR_KEY,
     register_incremental_update_store,
 )
 from docpipe.core.incremental_metadata.domain import (
@@ -98,18 +96,15 @@ class FilesystemIncrementalMetadataStore(IncrementalMetadataStore):
         """
         self.config = config or {}
 
-        # Resolve base_dir: env var > config dict > default data path
-        base_dir_override = os.getenv(ENV_INCREMENTAL_BASE_DIR_KEY)
-        if base_dir_override:
-            resolved = Path(base_dir_override)
-        elif self.config.get("base_dir") is not None:
+        # Resolve base_dir:  config dict > default data path
+        if self.config.get("base_dir") is not None:
             config_base_dir = self.config["base_dir"]
             resolved = Path(config_base_dir) if isinstance(config_base_dir, str) else config_base_dir
             resolved = resolved if resolved.is_absolute() else resolved.resolve()
         else:
             resolved = Path(get_data_path())
 
-        if base_dir_override or self.config.get("base_dir"):
+        if self.config.get("base_dir"):
             resolved.mkdir(parents=True, exist_ok=True)
 
         self._base_dir = resolved

@@ -861,7 +861,7 @@ class WorkPoolAdapter(BatchExecutionPort):
 
         # Delegate to JobManagementFactory for resolving job management environment
         try:
-            factory = JobManagementFactory.from_default_sources()
+            factory = JobManagementFactory.create_default_factory()
             job_management_env = factory.resolve_worker_env()
             resolved_env.update(job_management_env)
         except Exception as exc:
