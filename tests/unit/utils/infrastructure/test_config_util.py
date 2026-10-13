@@ -113,9 +113,7 @@ class TestDocpipeConfigLoaderGetStorage:
         """Service-specific storage config is returned when present."""
         config = {
             "global_storage": {"type": "duckdb", "config": {"base_dir": "/global"}},
-            "incremental_metadata": {
-                "storage": {"type": "filesystem", "config": {"base_dir": "/service"}}
-            },
+            "incremental_metadata": {"storage": {"type": "filesystem", "config": {"base_dir": "/service"}}},
         }
         config_path = tmp_path / "config.yaml"
         with config_path.open("w") as fh:
@@ -155,9 +153,7 @@ class TestDocpipeConfigLoaderGetStorage:
     def test_returns_empty_config_when_storage_block_has_no_config_key(self, *, tmp_path, monkeypatch):
         """Returns empty dict for config when the storage block has no 'config' sub-key."""
         config = {
-            "incremental_metadata": {
-                "storage": {"type": "filesystem"}
-            },
+            "incremental_metadata": {"storage": {"type": "filesystem"}},
         }
         config_path = tmp_path / "config.yaml"
         with config_path.open("w") as fh:

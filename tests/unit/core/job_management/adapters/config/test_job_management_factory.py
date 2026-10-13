@@ -1,6 +1,7 @@
 """
 Tests for JobManagementFactory configuration and store selection.
 """
+
 import os
 from pathlib import Path
 from unittest.mock import MagicMock, patch
@@ -112,7 +113,7 @@ class TestCreateDefaultFactory:
         # filesystem resolves to StorageBackend.FILESYSTEM
         factory = JobManagementFactory.create_default_factory()
 
-# <<<<<<< HEAD
+        # <<<<<<< HEAD
         assert factory.storage_backend == StorageBackend.FILESYSTEM
 
     def test_reads_storage_backend_from_service_specific_config(self, *, tmp_path, monkeypatch):
@@ -232,6 +233,8 @@ class TestGetDefaultFactoryJobManagement:
         monkeypatch.setattr(_factory_mod, "_default_factory", None)
 
         assert get_default_factory() is get_default_factory()
+
+
 # =======
 #     def test_from_environment_invalid_backend_raises_error(self):
 #         """Test invalid storage backend raises ValueError."""

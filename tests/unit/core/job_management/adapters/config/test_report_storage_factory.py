@@ -136,6 +136,7 @@ class TestRegisterContentStorageDecorator:
 
         assert "decorated" in ContentStorageFactory.list_storage_types()
 
+
 # ---------------------------------------------------------------------------
 # ContentStorageFactory.list_storage_types()
 # ---------------------------------------------------------------------------
@@ -166,9 +167,7 @@ class TestGetStore:
 
     def test_get_store_returns_content_file_system_storage(self, *, tmp_path):
         """get_store() returns a ContentFileSystemStorage for the 'filesystem' type."""
-        factory = ContentStorageFactory(
-            storage_type="filesystem", config={"data_root": str(tmp_path)}
-        )
+        factory = ContentStorageFactory(storage_type="filesystem", config={"data_root": str(tmp_path)})
 
         store = factory.get_store()
 
@@ -176,9 +175,7 @@ class TestGetStore:
 
     def test_get_store_is_singleton(self, *, tmp_path):
         """Repeated calls to get_store() return the identical object."""
-        factory = ContentStorageFactory(
-            storage_type="filesystem", config={"data_root": str(tmp_path)}
-        )
+        factory = ContentStorageFactory(storage_type="filesystem", config={"data_root": str(tmp_path)})
 
         assert factory.get_store() is factory.get_store()
 
@@ -195,6 +192,7 @@ class TestGetStore:
 
         with pytest.raises(DocpipeException, match="filesystem"):
             factory.get_store()
+
 
 # ---------------------------------------------------------------------------
 # ContentStorageFactory.create_default_factory()
@@ -218,11 +216,7 @@ class TestCreateDefaultFactory:
         mock_backend = _make_mock_backend(backend_name="custom_type")
         ContentStorageFactory.register(mock_backend)
 
-        config_data = {
-            "job_run_report": {
-                "storage": {"type": "custom_type", "config": {"data_root": str(tmp_path)}}
-            }
-        }
+        config_data = {"job_run_report": {"storage": {"type": "custom_type", "config": {"data_root": str(tmp_path)}}}}
         config_path = tmp_path / "config.yaml"
         with Path(config_path).open("w") as f:
             yaml.dump(config_data, f)
@@ -246,9 +240,7 @@ class TestCreateDefaultFactory:
 
     def test_raises_docpipe_exception_for_invalid_storage_type(self, *, tmp_path, monkeypatch):
         """create_default_factory() raises DocpipeException for an unregistered type."""
-        config_data = {
-            "job_run_report": {"storage": {"type": "totally_unknown_backend"}}
-        }
+        config_data = {"job_run_report": {"storage": {"type": "totally_unknown_backend"}}}
         config_path = tmp_path / "config.yaml"
         with Path(config_path).open("w") as f:
             yaml.dump(config_data, f)
@@ -257,13 +249,9 @@ class TestCreateDefaultFactory:
         with pytest.raises(DocpipeException, match="Invalid storage type"):
             ContentStorageFactory.create_default_factory()
 
-    def test_error_message_lists_available_backends_when_invalid_type(
-        self, *, tmp_path, monkeypatch
-    ):
+    def test_error_message_lists_available_backends_when_invalid_type(self, *, tmp_path, monkeypatch):
         """The error from create_default_factory lists 'filesystem' as available."""
-        config_data = {
-            "job_run_report": {"storage": {"type": "unknown_backend"}}
-        }
+        config_data = {"job_run_report": {"storage": {"type": "unknown_backend"}}}
         config_path = tmp_path / "config.yaml"
         with Path(config_path).open("w") as f:
             yaml.dump(config_data, f)
@@ -394,9 +382,7 @@ class TestContentStorageFactoryEdgeCases:
         with pytest.raises(DocpipeException, match="none"):
             factory.get_store()
 
-    def test_create_default_factory_raises_when_registry_empty_and_type_resolved(
-        self, *, tmp_path, monkeypatch
-    ):
+    def test_create_default_factory_raises_when_registry_empty_and_type_resolved(self, *, tmp_path, monkeypatch):
         """create_default_factory() raises DocpipeException when the registry is cleared."""
         ContentStorageFactory.clear_registry()
         monkeypatch.setenv("DOCPIPE_CONFIG_PATH", str(tmp_path / "absent.yaml"))

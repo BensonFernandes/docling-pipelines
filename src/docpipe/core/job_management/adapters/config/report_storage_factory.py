@@ -86,8 +86,7 @@ class ContentStorageFactory:
 
         if storage_type not in ContentStorageFactory._stores:
             available = ", ".join(ContentStorageFactory._stores.keys()) or "none"
-            raise DocpipeException(
-                f"Invalid storage type '{storage_type}' for job run report. Available: {available}")
+            raise DocpipeException(f"Invalid storage type '{storage_type}' for job run report. Available: {available}")
 
         return cls(storage_type=storage_type, config=storage_config)
 

@@ -113,7 +113,8 @@ class FlowDefinitionSnapshotStorageFactory:
         if storage_type not in FlowDefinitionSnapshotStorageFactory._stores:
             available = ", ".join(FlowDefinitionSnapshotStorageFactory._stores.keys()) or "none"
             raise DocpipeException(
-                f"Invalid storage type '{storage_type}' for flow definition snapshot storage. Available: {available}")
+                f"Invalid storage type '{storage_type}' for flow definition snapshot storage. Available: {available}"
+            )
 
         return cls(storage_type=storage_type, config=storage_config)
 

@@ -132,7 +132,8 @@ class IncrementalMetadataFactory:
         if storage_type not in IncrementalMetadataFactory._stores:
             available = ", ".join(IncrementalMetadataFactory._stores.keys()) or "none"
             raise DocpipeException(
-                f"Invalid storage type '{storage_type}' for incremental metadata. Available: {available}")
+                f"Invalid storage type '{storage_type}' for incremental metadata. Available: {available}"
+            )
 
         if DocpipeConfigKeys.POSTGRES in storage_config:
             storage_config[DocpipeConfigKeys.POSTGRES] = storage_config[DocpipeConfigKeys.POSTGRES]

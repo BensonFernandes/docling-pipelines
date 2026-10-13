@@ -84,7 +84,7 @@ class DocpipeConfigLoader:
         return default
 
     @classmethod
-    def get_storage(cls, key: str, default: Any=None) -> tuple[str, dict[str, Any]]:
+    def get_storage(cls, key: str, default: Any = None) -> tuple[str, dict[str, Any]]:
         # Returns storage type (ex: filesystem, duckdb, etc.) and
         # storage configuration for the given key (ex: incremental_metadata, flow_definition_snapshot, etc.)
 

@@ -58,6 +58,7 @@ class TestEnvVarResolution:
 
 # ── YAML config path ──────────────────────────────────────────────────────
 
+
 class TestYAMLConfigResolution:
     """YAML config is used when no env var is set."""
 
@@ -149,6 +150,7 @@ class TestYAMLConfigResolution:
         repo = ProjectRepositoryFactory.create_repository()
 
         assert repo._base_dir == env_dir
+
 
 # ── Default fallback ─────────────────────────────────────────────────────
 

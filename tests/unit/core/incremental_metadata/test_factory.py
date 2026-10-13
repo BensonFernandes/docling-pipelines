@@ -134,9 +134,7 @@ class TestCreateDefaultFactory:
 
     def test_creates_filesystem_store_from_global_storage_fallback(self, *, tmp_path, monkeypatch):
         """create_default_factory() falls back to global_storage when no service-specific block."""
-        config_data = {
-            "global_storage": {"type": "filesystem", "config": {"base_dir": str(tmp_path / "global")}}
-        }
+        config_data = {"global_storage": {"type": "filesystem", "config": {"base_dir": str(tmp_path / "global")}}}
         config_path = tmp_path / "config.yaml"
         with Path(config_path).open("w") as f:
             yaml.dump(config_data, f)
@@ -161,11 +159,7 @@ class TestCreateDefaultFactory:
 
     def test_raises_docpipe_exception_for_unregistered_storage_type(self, *, tmp_path, monkeypatch):
         """create_default_factory() raises DocpipeException when storage type is not registered."""
-        config_data = {
-            "incremental_metadata": {
-                "storage": {"type": "unknown_backend"}
-            }
-        }
+        config_data = {"incremental_metadata": {"storage": {"type": "unknown_backend"}}}
         config_path = tmp_path / "config.yaml"
         with Path(config_path).open("w") as f:
             yaml.dump(config_data, f)
@@ -177,11 +171,7 @@ class TestCreateDefaultFactory:
 
     def test_storage_type_stored_on_instance(self, *, tmp_path, monkeypatch):
         """Factory instance has the storage_type attribute set correctly."""
-        config_data = {
-            "incremental_metadata": {
-                "storage": {"type": "filesystem", "config": {}}
-            }
-        }
+        config_data = {"incremental_metadata": {"storage": {"type": "filesystem", "config": {}}}}
         config_path = tmp_path / "config.yaml"
         with Path(config_path).open("w") as f:
             yaml.dump(config_data, f)
@@ -214,4 +204,3 @@ class TestCreateDefaultFactory:
 
         assert isinstance(store, FilesystemIncrementalMetadataStore)
         assert store._lock_timeout == 5.0
-
