@@ -103,7 +103,7 @@ The application layer (`VectorDBOperator`) touches only `VectorStorePort` and `V
 
 - **`custom`** calls `weaviate.connect_to_custom(http_host, http_port, http_secure, grpc_host, grpc_port, grpc_secure, auth_credentials, additional_config=AdditionalConfig(timeout=Timeout(init, query, insert)), skip_init_checks)`.
 - **`cloud`** calls `weaviate.connect_to_weaviate_cloud(cluster_url, auth_credentials, additional_config, skip_init_checks)`.
-- **Credentials:** `Auth.api_key(key)`, `Auth.bearer_token(access_token=...)`, or `Auth.client_password(username, password)`; `None` for `none`. Values pass through `resolve_env_var` (as in the OpenSearch adapter). An unset variable raises before any network call.
+- **Credentials:** `Auth.api_key(key)`, `Auth.bearer_token(access_token=...)`, or `Auth.client_password(username, password)`; `None` for `none`. Values pass through `resolve_env_var` (as in the OpenSearch adapter). An unset variable raises before any network call.  # pragma: allowlist secret
 - **Readiness:** after connecting, `client.is_ready()` must be true, or a 503 `DocpipeException` is raised.
 - **Logging:** log lines use `%s` formatting and contain the host or cluster URL, `connection_type`, and `auth_type` only.
 
