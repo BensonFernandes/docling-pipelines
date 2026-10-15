@@ -28,7 +28,7 @@ class ClassificationPort(ABC):
 
         Document types are intentionally *not* read here: they are supplied
         per call to :meth:`classify_document` so adapters never depend on where
-        the classes came from (static files, UDC, ...).
+        the classes came from.
 
         Args:
             config: Full operator config dictionary.

@@ -227,13 +227,13 @@ class TestDocumentClassProviderInjection:
 
     def test_validate_reports_provider_failure_as_error(self) -> None:
         provider = MagicMock(spec=DocumentClassProvider)
-        provider.get_document_types.side_effect = RuntimeError("udc down")
+        provider.get_document_types.side_effect = RuntimeError("provider unavailable")
         op = DocumentClassifierOperator(
             _CONFIG_NO_TYPES, document_class_provider=provider, classification_adapter=_FakeAdapter()
         )
         errors: list[str] = []
         op.validate(errors, [], ["content"])
-        assert any("udc down" in e for e in errors)
+        assert any("provider unavailable" in e for e in errors)
 
 
 @pytest.mark.unit

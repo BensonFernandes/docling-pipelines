@@ -139,8 +139,8 @@ class DocumentClassifierOperator(AbstractOperator):  # type: ignore[misc]
                 - include_reasoning: Include reasoning in output (default: False)
             document_class_provider: Port used to resolve document types when
                 ``document_types`` is not given in *config*.  Defaults to
-                :class:`StaticDocumentClassProvider` (local JSON files).  Host
-                applications (e.g. datasift-api) inject their own implementation.
+                :class:`StaticDocumentClassProvider` (local JSON files).  Custom
+                implementations can be injected by callers.
             classification_adapter: Pre-built :class:`ClassificationPort`.  When
                 given, :class:`ClassificationAdapterFactory` is bypassed and
                 ``provider`` / ``provider_config`` are not used to build an adapter.
