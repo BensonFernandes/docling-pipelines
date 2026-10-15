@@ -5,6 +5,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from docpipe.core.constants.operator_constants import OperatorConstants
 from docpipe.core.operators.quality.classification.adapters.outbound.standard_llm_adapter import (
     StandardLLMClassificationAdapter,
 )
@@ -78,6 +79,15 @@ class TestStandardLLMClassificationAdapterInit:
     def test_stores_confidence_threshold(self) -> None:
         adapter = _make_adapter()
         assert adapter.confidence_threshold == 7.0
+
+    def test_stores_max_content_length_default(self) -> None:
+        adapter = _make_adapter()
+        assert adapter.max_content_length == OperatorConstants.Classification.DEFAULT_MAX_CONTENT_LENGTH
+
+    def test_stores_configured_max_content_length(self) -> None:
+        config = {**_BASE_CONFIG, "max_content_length": 500}
+        adapter = _make_adapter(config=config)
+        assert adapter.max_content_length == 500
 
     def test_requires_llm_adapter_parameter(self) -> None:
         """Constructor requires llm_adapter; passing it builds successfully."""
@@ -160,13 +170,30 @@ class TestFromConfig:
         with pytest.raises(ValueError, match="provider_config is required"):
             StandardLLMClassificationAdapter.from_config(config)
 
-    def test_raises_when_model_id_missing(self) -> None:
+    def test_model_id_falls_back_to_default_when_omitted(self) -> None:
+        """When provider_config.model_id is omitted, falls back to DEFAULT_MODEL."""
         config = {
             **_BASE_CONFIG,
             "provider_config": {"api_base": "http://localhost:11434/v1"},
         }
-        with pytest.raises(ValueError, match="model_id is required"):
+        mock_llm = _make_mock_llm_adapter()
+        with (
+            patch(
+                "docpipe.core.operators.quality.classification.adapters.outbound.standard_llm_adapter.LLMAdapterFactory"
+            ) as mock_factory_cls,
+            patch(
+                "docpipe.core.operators.quality.classification.adapters.outbound.standard_llm_adapter._LLMClassificationService"
+            ),
+        ):
+            mock_factory_cls.create_inference_adapter.return_value = mock_llm
+            mock_factory_cls.get_supported_providers.return_value = {"litellm", "watsonx"}
             StandardLLMClassificationAdapter.from_config(config)
+
+        mock_factory_cls.create_inference_adapter.assert_called_once_with(
+            provider="litellm",
+            model_id=OperatorConstants.Classification.DEFAULT_MODEL,
+            provider_config={"api_base": "http://localhost:11434/v1"},
+        )
 
     def test_raises_when_llm_factory_fails(self) -> None:
         with (
@@ -240,6 +267,31 @@ class TestClassifyDocumentWithExistingText:
         )
         assert isinstance(response, ClassificationResponse)
         assert response.success is True
+
+    def test_passes_configured_max_content_length_to_request(self) -> None:
+        """The configured max_content_length is forwarded to ClassificationRequest."""
+        config = {**_BASE_CONFIG, "max_content_length": 500}
+        adapter = _make_adapter(config=config)
+        adapter.classify_document(
+            doc_name="doc.pdf",
+            binary_content=None,
+            existing_text="Some document content",
+            document_types=["invoice"],
+        )
+        request = adapter._service.classify_document.call_args.kwargs["request"]  # type: ignore[attr-defined]
+        assert request.max_content_length == 500
+
+    def test_passes_default_max_content_length_to_request(self) -> None:
+        """When max_content_length is unconfigured, DEFAULT_MAX_CONTENT_LENGTH is used."""
+        adapter = _make_adapter()
+        adapter.classify_document(
+            doc_name="doc.pdf",
+            binary_content=None,
+            existing_text="Some document content",
+            document_types=["invoice"],
+        )
+        request = adapter._service.classify_document.call_args.kwargs["request"]  # type: ignore[attr-defined]
+        assert request.max_content_length == OperatorConstants.Classification.DEFAULT_MAX_CONTENT_LENGTH
 
 
 # ---------------------------------------------------------------------------

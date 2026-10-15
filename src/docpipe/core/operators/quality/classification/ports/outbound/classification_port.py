@@ -38,6 +38,10 @@ class ClassificationPort(ABC):
             OperatorConstants.Config.CONFIDENCE_THRESHOLD,
             OperatorConstants.Classification.DEFAULT_CONFIDENCE_THRESHOLD,
         )
+        self.max_content_length: int = config.get(
+            OperatorConstants.Config.MAX_CONTENT_LENGTH,
+            OperatorConstants.Classification.DEFAULT_MAX_CONTENT_LENGTH,
+        )
 
     @classmethod
     @abstractmethod

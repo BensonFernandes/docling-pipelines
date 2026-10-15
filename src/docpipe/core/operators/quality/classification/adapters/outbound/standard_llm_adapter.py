@@ -253,7 +253,9 @@ class StandardLLMClassificationAdapter(ClassificationPort):
         provider_config: dict[str, Any] = config.get(OperatorConstants.Config.PROVIDER_CONFIG, {})
         temperature: float = provider_config.get(OperatorConstants.LLM.TEMPERATURE, 0.0)
         max_tokens: int = provider_config.get(OperatorConstants.LLM.MAX_TOKENS, 500)
-        model_id: str = provider_config.get(OperatorConstants.Config.MODEL_ID, "")
+        model_id: str = (
+            provider_config.get(OperatorConstants.Config.MODEL_ID) or OperatorConstants.Classification.DEFAULT_MODEL
+        )
         provider: str = config.get(OperatorConstants.Config.PROVIDER, "").lower()
 
         self._service = _LLMClassificationService(
@@ -278,14 +280,13 @@ class StandardLLMClassificationAdapter(ClassificationPort):
 
                 * ``provider`` — one of ``"litellm"`` or ``"watsonx"`` (or the
                   ``"standard"`` alias).
-                * ``provider_config`` — dict with at minimum ``model_id``.
+                * ``provider_config`` — dict with optional model_id and connection parameters.
 
         Returns:
             A ready :class:`StandardLLMClassificationAdapter` instance.
 
         Raises:
-            ValueError: When ``provider_config`` or ``provider_config.model_id``
-                is absent.
+            ValueError: When ``provider_config`` is absent.
             ValueError: When :class:`~docpipe.core.adapters.llm_adapter_factory.LLMAdapterFactory`
                 fails to build the inference adapter.
         """
@@ -293,12 +294,12 @@ class StandardLLMClassificationAdapter(ClassificationPort):
         if not provider_config:
             raise ValueError(
                 "provider_config is required for StandardLLMClassificationAdapter. "
-                "Must include at minimum: {'model_id': '...', 'api_base': '...'}"
+                "Must include at minimum: {'api_base': '...'}"
             )
 
-        model_id: str = provider_config.get(OperatorConstants.Config.MODEL_ID, "")
-        if not model_id:
-            raise ValueError("provider_config.model_id is required for StandardLLMClassificationAdapter")
+        model_id: str = (
+            provider_config.get(OperatorConstants.Config.MODEL_ID) or OperatorConstants.Classification.DEFAULT_MODEL
+        )
 
         # Normalise provider — "standard" alias falls back to the default provider.
         raw_provider: str = config.get(OperatorConstants.Config.PROVIDER, "").lower()
@@ -423,6 +424,7 @@ class StandardLLMClassificationAdapter(ClassificationPort):
         request = ClassificationRequest(
             content=content,
             document_types=document_types,
+            max_content_length=self.max_content_length,
             confidence_threshold=self.confidence_threshold,
         )
         logger.debug(
