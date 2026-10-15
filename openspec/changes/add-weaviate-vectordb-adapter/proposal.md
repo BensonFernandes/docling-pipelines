@@ -58,6 +58,7 @@ No **BREAKING** changes. Existing `opensearch` and `milvus` behavior, configurat
 - Custom sparse embeddings such as SPLADE. Weaviate has no native sparse-vector field equivalent to Milvus's `SPARSE_FLOAT_VECTOR`, and docpipe's Milvus sparse mode does not store user-supplied sparse vectors either: it is BM25 computed by the server. Sparse mode on Weaviate is likewise BM25 over the content property.
 - Embedded Weaviate. It is experimental, Linux/macOS only, and downloads a server binary at runtime, so it is unsuitable as a container-free test path the way Milvus Lite is.
 - Changing OpenSearch or Milvus adapters, including Milvus's existing failed-item shape.
+- Vault secret resolution (`vault://` URIs). The adapter uses `resolve_env_var()` for `$VAR`/`${VAR}` references, consistent with the OpenSearch and Milvus adapters. Upgrading all three adapters to `resolve_value()` (which handles both env vars and `vault://` URIs) is a separate cross-cutting change.
 
 ## Impact
 
