@@ -1,44 +1,103 @@
-# Run the Kafka example
+# Run Docling Pipelines with Docker Compose
 
-Start in the repository root. This example requires `uv` and Docker Compose.
+Run all commands from repo root.
 
-## Start Kafka and register the schema
+## Prerequisites
+
+- Docker Engine 24.0+ and Docker Compose 2.24+; the Docker daemon must be running.
+- At least 6 GB of RAM available for containers.
+- Internet access to build images and download the embedding model.
+
+## Step 0: Setup Environment
+
+```bash
+cp -n docker/event-streaming/.env.example docker/event-streaming/.env
+```
+
+## Step 1: Verify Configuration
+
+```bash
+docker compose --env-file docker/event-streaming/.env -f docker/event-streaming/docker-compose.yml config --quiet
+```
+
+## Step 2: Build Image
+
+```bash
+docker compose --env-file docker/event-streaming/.env -f docker/event-streaming/docker-compose.yml build
+```
+
+or, for a GPU build, use:
+
+```bash
+# docker compose --env-file docker/event-streaming/.env -f docker/event-streaming/docker-compose.yml build --build-arg COMPUTE_BACKEND=gpu
+```
+
+## Step 3: Start Application
+
+```bash
+docker compose --env-file docker/event-streaming/.env -f docker/event-streaming/docker-compose.yml up -d --no-build
+```
+
+### Check application health:
+
+```bash
+docker compose --env-file docker/event-streaming/.env -f docker/event-streaming/docker-compose.yml ps
+curl --fail http://localhost:8080/health
+```
+
+### View API logs (optional)
+
+In a separate terminal, run this command to follow the API logs. Press `Ctrl+C` to stop the stream.
+
+```bash
+docker compose --env-file docker/event-streaming/.env -f docker/event-streaming/docker-compose.yml logs -f docpipe
+```
+
+## Step 4: Event Streaming: Run a sample producer and consumer
+
+Install the Event Streaming dependencies:
 
 ```bash
 uv sync --extra dev --extra event-streaming
-source .venv/bin/activate
-cd docker/event-streaming
-export KAFKA_TOPIC=docpipe-poc
-docker compose up -d
 ```
 
-## Consume messages
+### Confirm the topic was created
 
-In a new terminal opened at the repository root:
+The stack creates the input topic at startup. Check the initialization logs before sending an event:
 
 ```bash
-source .venv/bin/activate
-cd docker/event-streaming
-export KAFKA_TOPIC=docpipe-poc
-python kafka_consumer.py
+docker compose --env-file docker/event-streaming/.env -f docker/event-streaming/docker-compose.yml logs kafka-init
 ```
 
-## Produce a message
+### Confirm the schema is ready
 
-In another terminal opened at the repository root:
+The stack registers the event schema at startup. Check the registration logs before sending an event:
 
 ```bash
-source .venv/bin/activate
-cd docker/event-streaming
-export KAFKA_TOPIC=docpipe-poc
-python kafka_producer.py --message '{"event_id":"event-001","event_timestamp":"2026-01-01T00:00:00Z"}'
+docker compose --env-file docker/event-streaming/.env -f docker/event-streaming/docker-compose.yml logs register-schema
 ```
 
-The producer prints the result; the consumer prints the message.
+### Start listening for events
 
-## Stop Kafka
+Open a new terminal and leave the consumer running. It will print each event as it arrives:
 
 ```bash
-cd docker/event-streaming
-docker compose down
+uv run --env-file docker/event-streaming/.env python docker/event-streaming/helpers/kafka_consumer.py
 ```
+
+### Send a sample event
+
+Open a new terminal, publish a sample `create` event. You should see it appear in the consumer output:
+
+```bash
+uv run --env-file docker/event-streaming/.env python docker/event-streaming/helpers/kafka_producer.py \
+  --message '{"event_id":"00000000-0000-0000-0000-000000000000","event_timestamp":"2026-01-01T00:00:00Z","routing_key":"example","operation":"create","file_reference":"/documents/example.txt"}'
+```
+
+## Stop the stack
+
+```bash
+docker compose --env-file docker/event-streaming/.env -f docker/event-streaming/docker-compose.yml down
+```
+
+Named data volumes are retained. Add `-v` to remove them.
