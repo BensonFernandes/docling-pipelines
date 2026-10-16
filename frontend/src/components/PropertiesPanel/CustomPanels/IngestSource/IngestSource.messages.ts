@@ -56,8 +56,13 @@ export const messages = defineMessages({
   filterConflict: {
     id: 'src.components.PropertiesPanel.CustomPanels.IngestSource.filterConflict',
     defaultMessage:
-      'Conflict: "{extensions}" {count, plural, one {is} other {are}} in both include and exclude. '
+      'Conflict: {extensions} {count, plural, one {is} other {are}} in both include and exclude. '
       + 'These file types will be skipped.',
+  },
+  filterConflictExtension: {
+    id: 'src.components.PropertiesPanel.CustomPanels.IngestSource.filterConflictExtension',
+    description: 'A single file extension wrapped in locale-appropriate quotation marks',
+    defaultMessage: '"{extension}"',
   },
   providerLabelFilesystem: {
     id: 'src.components.PropertiesPanel.CustomPanels.IngestSource.providerLabelFilesystem',

@@ -160,7 +160,12 @@ export function IngestSourcePanelBody({
   );
   const filterConflictWarning = conflictingExtensions.length > 0
     ? intl.formatMessage(messages.filterConflict, {
-      extensions: conflictingExtensions.join('", "'),
+      extensions: intl.formatList(
+        conflictingExtensions.map((extension) => intl.formatMessage(
+          messages.filterConflictExtension,
+          { extension }
+        ))
+      ),
       count: conflictingExtensions.length,
     })
     : null;
