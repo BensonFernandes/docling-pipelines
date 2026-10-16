@@ -50,9 +50,9 @@ The Weaviate `provider_config` SHALL require `collection_name`, matching `^[A-Z]
 - **WHEN** a `weaviate` node's `provider_config` omits `collection_name`
 - **THEN** flow validation reports `collection_name is not provided`
 
-#### Scenario: Collection name starts with a lowercase letter
-- **WHEN** `collection_name` is `docs_chunks` (starts with lowercase `d`)
-- **THEN** flow validation reports that Weaviate collection names must start with an uppercase letter and contain only letters, digits, and underscores
+#### Scenario: Collection name violates Weaviate naming conventions
+- **WHEN** `collection_name` does not match the Weaviate collection naming pattern `^[A-Z][_0-9A-Za-z]*$`
+- **THEN** flow validation reports an error stating that the collection name must start with an uppercase ASCII letter and contain only ASCII letters, digits, and underscores.
 
 #### Scenario: Cloud deployment without cluster URL
 - **WHEN** the deployment is Weaviate Cloud and no cluster URL is provided
