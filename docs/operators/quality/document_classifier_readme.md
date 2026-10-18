@@ -77,7 +77,9 @@ graph TD
 ### Adding a new adapter
 
 Implement `ClassificationPort` (set `ADAPTER_NAME`, implement `from_config()` and
-`classify_document()`), then call `ClassificationAdapterFactory.register(MyAdapter)`.
+`classify_document()`) and decorate the class with `@register_classification_adapter`. The
+decorator registers the adapter with `ClassificationAdapterFactory`; the module must be imported
+(for example from `adapters/outbound/__init__.py`) for registration to occur.
 
 Adapters that do not need Docling text (for example, ones that classify from raw bytes) simply
 leave `extracted_content` and `extraction_metadata` as `None`; the operator then never runs
@@ -640,92 +642,38 @@ curl http://localhost:11434/api/tags
 
 ## API Reference
 
-### ClassificationService
+### ClassificationPort
+
+Outbound port that every classification adapter implements. Adapters are resolved by
+`ClassificationAdapterFactory`, which dispatches to the adapter's `from_config()` classmethod.
 
 ```python
-class ClassificationService:
-    """Simplified classification service using LLM adapters directly."""
+class ClassificationPort(ABC):
+    ADAPTER_NAME: str
+    ADAPTER_DISPLAY_NAME: str
 
-    def __init__(
+    @classmethod
+    @abstractmethod
+    def from_config(cls, config: dict[str, Any]) -> Self:
+        """Validate config, build dependencies, and return a ready adapter."""
+
+    @abstractmethod
+    def classify_document(
         self,
         *,
-        model_id: str | None = None,
-        provider_name: str | None = None,
-        provider_config: dict[str, Any] | None = None,
-        temperature: float = 0.0,
-        max_tokens: int = 500,
-        llm_adapter: LLMInferencePort | None = None,
-        document_class_provider: DocumentClassProvider | None = None,
-    ) -> None:
-        """Initialize classification service.
-
-        At least one of ``llm_adapter`` or ``provider_name`` must be supplied.
-
-        * When ``llm_adapter`` is given it is used directly and ``LLMAdapterFactory``
-          is **not** called. ``model_id`` and ``provider_name`` are then optional
-          (stored only for informational purposes).
-        * When only ``provider_name`` is given the ``LLMAdapterFactory`` path is
-          used (requires ``model_id``).
-
-        Args:
-            model_id: Model identifier for the provider. Required when
-                ``llm_adapter`` is not provided.
-            provider_name: Provider name ('watsonx' or 'litellm'). Required
-                when ``llm_adapter`` is not provided.
-            provider_config: Provider-specific configuration dictionary.
-            temperature: Temperature for LLM generation (default: 0.0).
-            max_tokens: Maximum tokens for LLM response (default: 500).
-            llm_adapter: Pre-built ``LLMInferencePort`` instance. When
-                supplied, ``model_id`` / ``provider_name`` / ``provider_config``
-                are ignored for adapter construction.
-            document_class_provider: Provider for resolving document class
-                metadata (types, schemas, Docling templates). Defaults to
-                ``StaticDocumentClassProvider`` which reads from local JSON files.
-        """
-        pass
-
-    def classify_document(self, *, request: ClassificationRequest) -> ClassificationResponse:
-        """Classify a document using the LLM adapter.
-
-        Args:
-            request: Classification request with content and document types
-
-        Returns:
-            Classification response with type, confidence, and reasoning
-        """
-        pass
-
-    def get_model_info(self) -> dict[str, Any]:
-        """Get model information.
-
-        Returns:
-            Dictionary with model_id, provider, temperature, and max_tokens
-        """
-        pass
-
-    @staticmethod
-    def validate_config(
-        *,
-        provider: str | None = None,
-        model_id: str | None = None,
-        provider_config: dict[str, Any] | None = None,
-        document_types: list[str] | dict[str, str] | None = None,
-        confidence_threshold: float | None = None,
-    ) -> tuple[list[str], list[str]]:
-        """Validate classification configuration parameters.
-
-        Validates:
-        - Provider is 'litellm' or 'watsonx' (rejects 'ollama')
-        - provider_config is present for both litellm and watsonx providers
-        - model_id is not empty
-        - document_types is valid list or dict
-        - confidence_threshold is between 1.0 and 10.0
-
-        Returns:
-            Tuple of (errors, warnings) lists
-        """
-        pass
+        doc_name: str,
+        binary_content: bytes | None,
+        existing_text: str | None,
+        document_types: list[str] | dict[str, str],
+    ) -> ClassificationResponse:
+        """Classify a single document and return a structured response."""
 ```
+
+### StandardLLMClassificationAdapter
+
+Built-in adapter registered as `"standard"`. It serves the `litellm` and `watsonx` providers and
+builds its `LLMInferencePort` through `LLMAdapterFactory` in `from_config()`. See the
+[Architecture](#architecture) section for how the operator, factory, and adapter interact.
 
 ### Domain Models
 
@@ -768,16 +716,18 @@ class ModelInfo:
 
 ## Version History
 
+- **v3.0.0** : Hexagonal port/adapter architecture
+  - Operator depends only on `ClassificationPort`; adapters are resolved by `ClassificationAdapterFactory`
+  - Built-in `StandardLLMClassificationAdapter` serves the `litellm` and `watsonx` providers
+  - Adapters self-register via `@register_classification_adapter`
+  - `provider_config` is required for `litellm` and optional for `watsonx` (environment-variable credentials)
 - **v2.1.0** : Dependency injection and pluggable document class provider
-  - `ClassificationService` now accepts an optional pre-built `LLMInferencePort` via `llm_adapter=`, bypassing `LLMAdapterFactory`
-  - `provider_name` is now optional when a pre-built adapter is injected
+  - The classifier accepts an optional pre-built `LLMInferencePort`, bypassing `LLMAdapterFactory`
   - Added `DocumentClassProvider` port; default `StaticDocumentClassProvider` preserves existing local-file behaviour
-  - `ClassificationService` and entity extraction adapters accept `document_class_provider=` for injecting custom metadata sources
-- **v2.0.0** : Simplified architecture
-  - Removed hexagonal architecture (ports/adapters) in favor of simplified service-based design
+  - Classification and entity extraction adapters accept `document_class_provider=` for injecting custom metadata sources
+- **v2.0.0** : Shared LLM infrastructure
   - Leverages shared LLM infrastructure (`LLMAdapterFactory`)
   - Removed standalone Ollama provider (use LiteLLM with OpenAI-compatible API instead)
-  - Added `validate_config()` static method for configuration validation
   - Supports LiteLLM (100+ providers) and Watsonx
 - **v1.1.0** : LiteLLM integration
   - Replaced OpenAI adapter with LiteLLM adapter

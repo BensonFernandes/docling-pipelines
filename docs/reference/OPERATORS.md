@@ -691,7 +691,7 @@ The ExtractOperator uses hexagonal architecture (ports and adapters pattern) wit
 
 #### DocumentClassifierOperator
 
-**Purpose:** Classifies documents into predefined types using LLM-based classification with confidence scoring and reasoning. Uses simplified service-based architecture with shared LLM infrastructure supporting multiple providers (LiteLLM, Watsonx).
+**Purpose:** Classifies documents into predefined types using LLM-based classification with confidence scoring and reasoning. Uses a port/adapter architecture (`ClassificationPort`) with shared LLM infrastructure supporting multiple providers (LiteLLM, Watsonx).
 
 **Category:** Quality
 

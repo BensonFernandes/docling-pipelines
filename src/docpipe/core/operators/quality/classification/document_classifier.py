@@ -13,6 +13,7 @@ from typing import Any
 import pyarrow as pa
 from data_processing.utils import TransformUtils
 
+import docpipe.core.operators.quality.classification.adapters.outbound  # noqa: F401  (registers adapters)
 from docpipe.core.constants import AttributeDataTypes, DocpipeConstants, Metrics, OperatorConstants
 from docpipe.core.operators.abstract_operator import AbstractOperator, OperatorCategory
 from docpipe.core.operators.operator_utils import OperatorUtils
@@ -183,11 +184,6 @@ class DocumentClassifierOperator(AbstractOperator):  # type: ignore[misc]
         # Output options
         self.include_confidence: bool = config.get(OperatorConstants.Config.INCLUDE_CONFIDENCE, True)
         self.include_reasoning: bool = config.get(OperatorConstants.Config.INCLUDE_REASONING, False)
-
-        # Content length limit
-        self.max_content_length: int = config.get(
-            OperatorConstants.Config.MAX_CONTENT_LENGTH, OperatorConstants.Classification.DEFAULT_MAX_CONTENT_LENGTH
-        )
 
         # Job tracking context for progress updates
         self.batch_id = config.get(DocpipeConstants.BATCH_ID)

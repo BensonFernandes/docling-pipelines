@@ -28,8 +28,8 @@ class ClassificationAdapterFactory:
 
     Registry
     --------
-    Adapters self-register by calling :meth:`register` at the bottom of their
-    module (same pattern as ``DOCPIPE_OPERATORS`` in the operator registry).
+    Adapters self-register via the ``@register_classification_adapter``
+    decorator (same pattern as ``@register_entity_extraction_adapter``).
     The key is each adapter's ``ADAPTER_NAME`` class attribute.
 
     Aliases
@@ -62,7 +62,7 @@ class ClassificationAdapterFactory:
     def register(cls, adapter_class: type[ClassificationPort]) -> None:
         """Register *adapter_class* under its ``ADAPTER_NAME``.
 
-        Call this once at module level after defining a new adapter class.
+        Normally invoked through the ``@register_classification_adapter`` decorator.
 
         Args:
             adapter_class: A concrete subclass of :class:`ClassificationPort`
@@ -130,15 +130,22 @@ class ClassificationAdapterFactory:
         return set(cls._REGISTRY) | set(cls._PROVIDER_ALIASES)
 
 
-# ---------------------------------------------------------------------------
-# Built-in adapter registrations
-# ---------------------------------------------------------------------------
-# Import here (bottom of file) to avoid circular imports.  Each adapter is
-# registered under its ADAPTER_NAME.  External adapters call register() from
-# their own module after definition.
+def register_classification_adapter(adapter_class: type[ClassificationPort]) -> type[ClassificationPort]:
+    """Decorator to register a classification adapter with ``ClassificationAdapterFactory``.
 
-from docpipe.core.operators.quality.classification.adapters.outbound.standard_llm_adapter import (  # noqa: E402
-    StandardLLMClassificationAdapter,
-)
+    Args:
+        adapter_class: Concrete subclass of :class:`ClassificationPort`.
 
-ClassificationAdapterFactory.register(StandardLLMClassificationAdapter)
+    Returns:
+        The adapter class (unchanged).
+
+    Example::
+
+        @register_classification_adapter
+        class MyAdapter(ClassificationPort):
+            ADAPTER_NAME = "my_adapter"
+            ADAPTER_DISPLAY_NAME = "My Adapter"
+            ...
+    """
+    ClassificationAdapterFactory.register(adapter_class)
+    return adapter_class

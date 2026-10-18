@@ -17,6 +17,9 @@ from docpipe.core.adapters.llm_adapter_factory import LLMAdapterFactory
 from docpipe.core.constants.constants import LLMConstants
 from docpipe.core.constants.operator_constants import OperatorConstants
 from docpipe.core.operators.operator_utils import OperatorUtils
+from docpipe.core.operators.quality.classification.adapters.outbound.factories.classification_adapter_factory import (
+    register_classification_adapter,
+)
 from docpipe.core.operators.quality.classification.domain.models import (
     ClassificationRequest,
     ClassificationResponse,
@@ -58,8 +61,8 @@ class _LLMClassificationService:
         self,
         *,
         llm_adapter: LLMInferencePort,
-        temperature: float = 0.0,
-        max_tokens: int = 500,
+        temperature: float = OperatorConstants.Classification.DEFAULT_TEMPERATURE,
+        max_tokens: int = OperatorConstants.Classification.DEFAULT_MAX_TOKENS,
         model_id: str = "",
         provider_name: str = "",
     ) -> None:
@@ -67,8 +70,10 @@ class _LLMClassificationService:
 
         Args:
             llm_adapter: Pre-built :class:`LLMInferencePort` instance.
-            temperature: Sampling temperature (default ``0.0``).
-            max_tokens: Maximum tokens for LLM response (default ``500``).
+            temperature: Sampling temperature
+                (default ``OperatorConstants.Classification.DEFAULT_TEMPERATURE``).
+            max_tokens: Maximum tokens for LLM response
+                (default ``OperatorConstants.Classification.DEFAULT_MAX_TOKENS``).
             model_id: Model identifier stored for logging/metadata only.
             provider_name: Provider name stored for logging/metadata only.
 
@@ -168,7 +173,7 @@ class _LLMClassificationService:
                 ) from exc
 
             logger.debug(
-                "_LLMClassificationService: parsed result — type=%s confidence=%s",
+                "_LLMClassificationService: parsed result - type=%s confidence=%s",
                 result[OperatorConstants.Classification.FIELD_DOCUMENT_TYPE],
                 result[OperatorConstants.Classification.FIELD_CONFIDENCE],
             )
@@ -208,16 +213,13 @@ class _LLMClassificationService:
             "max_tokens": self.max_tokens,
         }
 
-    def cleanup(self) -> None:
-        """Release LLM adapter resources."""
-        logger.debug("_LLMClassificationService: cleanup complete")
-
 
 # ---------------------------------------------------------------------------
 # Public adapter
 # ---------------------------------------------------------------------------
 
 
+@register_classification_adapter
 class StandardLLMClassificationAdapter(ClassificationPort):
     """Implements :class:`ClassificationPort` for ``litellm`` and ``watsonx``
     providers by delegating to :class:`_LLMClassificationService`.
@@ -247,12 +249,24 @@ class StandardLLMClassificationAdapter(ClassificationPort):
         Args:
             llm_adapter: Pre-built and validated :class:`LLMInferencePort`.
             config: Full operator config dictionary (used for
-                confidence_threshold, temperature, max_tokens).
+                confidence_threshold, max_content_length, temperature, max_tokens).
         """
-        super().__init__(config=config)
-        provider_config: dict[str, Any] = config.get(OperatorConstants.Config.PROVIDER_CONFIG, {})
-        temperature: float = provider_config.get(OperatorConstants.LLM.TEMPERATURE, 0.0)
-        max_tokens: int = provider_config.get(OperatorConstants.LLM.MAX_TOKENS, 500)
+        self.config = config
+        self.confidence_threshold: float = config.get(
+            OperatorConstants.Config.CONFIDENCE_THRESHOLD,
+            OperatorConstants.Classification.DEFAULT_CONFIDENCE_THRESHOLD,
+        )
+        self.max_content_length: int = config.get(
+            OperatorConstants.Config.MAX_CONTENT_LENGTH,
+            OperatorConstants.Classification.DEFAULT_MAX_CONTENT_LENGTH,
+        )
+        provider_config: dict[str, Any] = config.get(OperatorConstants.Config.PROVIDER_CONFIG) or {}
+        temperature: float = provider_config.get(
+            OperatorConstants.LLM.TEMPERATURE, OperatorConstants.Classification.DEFAULT_TEMPERATURE
+        )
+        max_tokens: int = provider_config.get(
+            OperatorConstants.LLM.MAX_TOKENS, OperatorConstants.Classification.DEFAULT_MAX_TOKENS
+        )
         model_id: str = (
             provider_config.get(OperatorConstants.Config.MODEL_ID) or OperatorConstants.Classification.DEFAULT_MODEL
         )
@@ -281,17 +295,29 @@ class StandardLLMClassificationAdapter(ClassificationPort):
                 * ``provider`` — one of ``"litellm"`` or ``"watsonx"`` (or the
                   ``"standard"`` alias).
                 * ``provider_config`` — dict with optional model_id and connection parameters.
+                  Required for ``litellm``; optional for ``watsonx``, which falls
+                  back to the ``WATSONX_*`` environment variables.
 
         Returns:
             A ready :class:`StandardLLMClassificationAdapter` instance.
 
         Raises:
-            ValueError: When ``provider_config`` is absent.
+            ValueError: When ``provider_config`` is absent for a provider that requires it (``litellm``).
             ValueError: When :class:`~docpipe.core.adapters.llm_adapter_factory.LLMAdapterFactory`
                 fails to build the inference adapter.
         """
         provider_config: dict[str, Any] = config.get(OperatorConstants.Config.PROVIDER_CONFIG) or {}
-        if not provider_config:
+
+        # Normalise provider - "standard" alias falls back to the default provider.
+        raw_provider: str = config.get(OperatorConstants.Config.PROVIDER, "").lower()
+        llm_provider = (
+            raw_provider
+            if raw_provider in LLMAdapterFactory.get_supported_providers(capability="inference")
+            else OperatorConstants.Classification.DEFAULT_PROVIDER
+        )
+
+        # watsonx may rely on WATSONX_* environment variables, so an empty provider_config is valid there.
+        if llm_provider == OperatorConstants.Classification.PROVIDER_LITELLM and not provider_config:
             raise ValueError(
                 "provider_config is required for StandardLLMClassificationAdapter. "
                 "Must include at minimum: {'api_base': '...'}"
@@ -299,14 +325,6 @@ class StandardLLMClassificationAdapter(ClassificationPort):
 
         model_id: str = (
             provider_config.get(OperatorConstants.Config.MODEL_ID) or OperatorConstants.Classification.DEFAULT_MODEL
-        )
-
-        # Normalise provider — "standard" alias falls back to the default provider.
-        raw_provider: str = config.get(OperatorConstants.Config.PROVIDER, "").lower()
-        llm_provider = (
-            raw_provider
-            if raw_provider in LLMAdapterFactory.get_supported_providers(capability="inference")
-            else OperatorConstants.Classification.DEFAULT_PROVIDER
         )
 
         logger.debug(

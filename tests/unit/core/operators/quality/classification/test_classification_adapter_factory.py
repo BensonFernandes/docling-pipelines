@@ -57,7 +57,7 @@ class TestRegistry:
 
             @classmethod
             def from_config(cls, config: dict[str, Any]) -> "_FakeAdapter":
-                return cls(config=config)
+                return cls()
 
             def classify_document(self, *, doc_name, binary_content, existing_text, document_types):  # type: ignore[override]
                 ...

@@ -176,7 +176,6 @@ class _FakeAdapter(ClassificationPort):
     ADAPTER_DISPLAY_NAME = "Fake"
 
     def __init__(self) -> None:
-        super().__init__(config={})
         self.received_types: Any = None
 
     @classmethod
