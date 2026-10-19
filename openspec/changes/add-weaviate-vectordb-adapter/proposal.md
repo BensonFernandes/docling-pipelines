@@ -2,9 +2,9 @@
 
 ## Why
 
-The `vectordb` operator can write to OpenSearch and Milvus only. Weaviate is a widely used open-source (BSD-3-Clause) vector database with named vectors, built-in BM25/hybrid search, and a managed cloud offering. Teams that already run it cannot use docpipe as their ingestion pipeline without writing a custom operator. The operator's hexagonal design (`VectorStorePort`, `VectorStoreFactory` lazy registration, per-adapter Pydantic config) was built for exactly this kind of extension, and the frontend provider list is already driven by backend metadata. Weaviate can therefore be added as a first-class provider without changing the operator's contract.
+The `vectordb` operator can write to OpenSearch and Milvus only. Weaviate is a widely used open-source (BSD-3-Clause) vector database with named vectors, built-in BM25/hybrid search, and a managed cloud offering. Teams that already run it cannot use docpipe as their ingestion pipeline without writing a custom operator. The operator's hexagonal design (`VectorStorePort`, `VectorStoreFactory` lazy registration, per-adapter Pydantic config) was built for exactly this kind of extension. Weaviate can therefore be added as a first-class provider without changing the operator's contract.
 
-**Layer:** full-stack. The backend gets a new storage adapter, metadata enrichment, a dependency, docs, and a sample flow. The frontend VectorDB properties panel gets Weaviate connection and authentication configuration at parity with Milvus. There are no routing, BFF proxy, or Redux slice changes.
+**Layer:** backend-only. The backend gets a new storage adapter, metadata enrichment, a dependency, docs, and a sample flow. There are no frontend, routing, BFF proxy, or Redux slice changes.
 
 ## What Changes
 
@@ -19,18 +19,10 @@ The `vectordb` operator can write to OpenSearch and Milvus only. Weaviate is a w
 - **Backend: sparse (BM25) mode, at parity with Milvus.** `add_sparse_vector: true` is supported. docpipe's Milvus sparse mode is server-computed BM25 over the `text` field (the `sparse_embeddings` feature is never inserted), and Weaviate's equivalent is BM25 over the keyword index of the mapped content property. The flag enables sparse-only runs with no dense embeddings, hybrid dense-plus-BM25 collections, Milvus's BM25 parameters (k1 = 1.2, b = 0.75), a check that content is mapped, and sparse-aware validation and enrichment. Content stays keyword-searchable when the flag is off.
 - **Backend: dependency.** Add `weaviate-client` (v4 API) as a pinned core dependency alongside `pymilvus` and `opensearch-py`, and regenerate `uv.lock`. **Risk:** `weaviate-client` 4.23.1 caps `grpcio<1.80.0`, while the lock currently resolves `grpcio==1.84.0`. Resolving the lock is a gating task (see design).
 - **Backend: constants.** Add `OperatorConstants.VectorDB.WEAVIATE` and the Weaviate-specific config keys.
-- **Frontend: VectorDB properties panel.** Add a `weaviate` entry to `PROVIDER_CONFIG_MAP`:
-  - `collection_name` resource key, `distance_metric` similarity key and labels, and a collection-name pattern;
-  - managed keys and enrichment defaults for Weaviate;
-  - a "Connection" accordion with a self-hosted / Weaviate Cloud deployment selector (host, HTTP port, gRPC host/port, secure toggle, or cluster URL);
-  - an "Authentication" accordion with none / API key / bearer token / OIDC username-password methods, with each switch clearing the previous method's fields atomically.
-
-  These use Carbon `Accordion`/`AccordionItem`, `Dropdown`, `TextInput`, `Toggle`, the shared `VaultInput`, and `DefinitionTooltip`. The feature-mapping tearsheet validates new Weaviate collection names and blocks save on invalid input, and shows the sparse (BM25) checkbox for Weaviate as it does for Milvus.
 - **Testing:**
   - backend unit tests for every new module, with the Weaviate client mocked;
   - operator-level tests with `provider: "weaviate"`;
-  - a Docker-gated integration suite against a real Weaviate server (`docker/docker-compose.weaviate.yml`) that skips cleanly when Docker is unavailable;
-  - frontend vitest coverage for the new panel branches, enrichment key resolution, and tearsheet validation.
+  - a Docker-gated integration suite against a real Weaviate server (`docker/docker-compose.weaviate.yml`) that skips cleanly when Docker is unavailable.
 - **Docs and samples:** update `docs/operators/vectordb/vectordb_readme.md` and `docs/reference/OPERATORS.md`, and add `sample_flows/vectordb/weaviate_integration.json`.
 
 No **BREAKING** changes. Existing `opensearch` and `milvus` behavior, configuration, and defaults are unchanged.
@@ -43,10 +35,11 @@ No **BREAKING** changes. Existing `opensearch` and `milvus` behavior, configurat
 
 ### Modified Capabilities
 
-- `frontend/properties-panel`: The "VectorDB feature mapping and backend configuration" requirement expands from OpenSearch/Milvus to include Weaviate. New requirements cover Weaviate connection and authentication configuration, the sparse (BM25) checkbox, required-field gating, keyboard and ARIA semantics, and collection-name validation.
+None.
 
 ## Non-goals
 
+- Frontend configuration and UI changes.
 - Reimplementing any part of the Weaviate server. The adapter is a client of an existing Weaviate deployment through the official `weaviate-client`.
 - Search or query features beyond what `VectorStorePort` requires: no hybrid/BM25/near-vector query API, generative modules, or reranking.
 - Server-side vectorizer modules (`text2vec-*`). docpipe always supplies vectors from the `embeddings` operator, so collections use self-provided named vectors only.
@@ -66,6 +59,5 @@ No **BREAKING** changes. Existing `opensearch` and `milvus` behavior, configurat
 - **Storage adapters:** new `weaviate` outbound adapter package; `VectorStoreFactory` registration in `vectordb_operator.py`; `VectorDBMetadataFetcher` routing.
 - **REST routes:** none added or changed. `GET /api/v1/operators` metadata now lists `weaviate` in `provider` valid values and `provider_config.providers`. `POST /api/v1/validation/enrich_flow_features` returns Weaviate metadata for `vectordb` nodes with `provider: "weaviate"`.
 - **Dependencies:** `weaviate-client` (pinned) in `[project.dependencies]`; `uv.lock` regenerated. This may move `grpcio` to a version below 1.80 unless the upstream cap is lifted first.
-- **Frontend:** `frontend/src/components/PropertiesPanel/CustomPanels/VectorDB/` (`constants.ts`, `VectorDB.tsx`, `VectorDBFeatureMappingTearsheet.tsx`) and provider copy in `operatorLabels.ts`, `nodeSuggestion.ts`, `operatorPalette.json`. No routing under `/ui`, BFF proxy, or Redux slice changes.
-- **Infrastructure and tests:** new `docker/docker-compose.weaviate.yml`; new `tests/unit/operators/vectordb/test_weaviate_*.py` and `tests/integration/weaviate/`; new frontend tests under `frontend/tests/unit/components/PropertiesPanel/CustomPanels/VectorDB/`.
+- **Infrastructure and tests:** new `docker/docker-compose.weaviate.yml`; new `tests/unit/operators/vectordb/test_weaviate_*.py` and `tests/integration/weaviate/`.
 - **Docs:** VectorDB operator README, `docs/reference/OPERATORS.md`, and a sample flow. `CHANGELOG.md` is not touched.

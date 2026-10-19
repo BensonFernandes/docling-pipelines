@@ -2,7 +2,7 @@
 
 ## Context
 
-See [proposal.md](proposal.md) for motivation and scope. The requirements are in [specs/backend/vectordb-operator/spec.md](specs/backend/vectordb-operator/spec.md) and [specs/frontend/properties-panel/spec.md](specs/frontend/properties-panel/spec.md).
+See [proposal.md](proposal.md) for motivation and scope. The requirements are in [specs/backend/vectordb-operator/spec.md](specs/backend/vectordb-operator/spec.md).
 
 **Current shape of the VectorDB operator.** It is hexagonal:
 
@@ -23,8 +23,6 @@ See [proposal.md](proposal.md) for motivation and scope. The requirements are in
   - `MilvusIndexManager` declares a `SPARSE_FLOAT_VECTOR` field, which a Milvus `Function(BM25)` fills from the content field. The content field is non-nullable with an analyzer, and BM25 uses k1 = 1.2 and b = 0.75.
   - `MilvusBatchProcessor.prepare_document` skips the `sparse_embeddings` feature.
   - `VectorDBOperator._resolve_vector_dimensions` allows sparse-only runs: with no dense columns it returns an empty dimension mapping.
-  - The tearsheet renders the sparse checkbox only for `provider === MILVUS`.
-- The frontend panel's `providerOptions` already come from `provider_config.providers`. However, `getProviderConfig` falls back to OpenSearch for unknown providers, and `managedKeys` is a two-way ternary that falls through to the Milvus key set. Both must become provider-keyed.
 - `slim/pyproject.toml` also pins `pymilvus` and `opensearch-py`, so the slim variant needs the new dependency too.
 
 **Upstream facts that shape the approach** (official docs and PyPI, verified 2026-10-15):
@@ -54,7 +52,7 @@ See [proposal.md](proposal.md) for motivation and scope. The requirements are in
 - No change to `VectorStorePort`, `domain/models.py`, `VectorStoreFactory`, or the failed-item parsing in `VectorDBOperator`.
 - No lazy connection. Weaviate connects in `__init__` like its siblings. Moving all adapters to lazy connections is a separate change.
 - No reuse of Milvus code via inheritance. Shared helpers come only from `utils/operators/vectordb_utils.py`.
-- No new SCSS modules and no Redux state.
+- No frontend changes.
 
 ## Decisions
 
@@ -81,7 +79,7 @@ The application layer (`VectorDBOperator`) touches only `VectorStorePort` and `V
 
 ### D3. `WeaviateConfig` fields
 
-`collection_name` (required; validator enforces `^[A-Z][_0-9A-Za-z]*$` with the spec message; `json_schema_extra` publishes the pattern for the UI).
+`collection_name` (required; validator enforces `^[A-Z][_0-9A-Za-z]*$` with the spec message; `json_schema_extra` publishes the pattern in operator metadata).
 
 `connection_type: Literal["custom","cloud"] = "custom"`; `host = "localhost"`; `port = 8080`; `secure = False`; `grpc_host: str | None` (defaults to `host`); `grpc_port = 50051`; `grpc_secure: bool | None` (defaults to `secure`); `cluster_url: str | None`.
 
@@ -89,15 +87,15 @@ The application layer (`VectorDBOperator`) touches only `VectorStorePort` and `V
 
 `timeout_init = 30`, `timeout_query = 60`, `timeout_insert = 120` (seconds), `skip_init_checks = False`, `batch_size = 100` (≥1).
 
-`index_type: Literal["hnsw","flat","dynamic"] = "hnsw"`; `distance_metric: Literal["cosine","dot","l2-squared","manhattan","hamming"] = "cosine"`; `index_parameters: dict = {}`; `add_sparse_vector: bool = False` (schema parity with `MilvusConfig`; see D15 for precedence).
+`index_type: Literal["hnsw","flat","dynamic"] = "hnsw"`; `distance_metric: Literal["cosine","dot","l2-squared","manhattan","hamming"] = "cosine"`; `index_parameters: dict = {}`; `add_sparse_vector: bool = False` (schema parity with `MilvusConfig`; see D14 for precedence).
 
 - **Defaults** follow Weaviate's own: cosine distance and HNSW. Milvus and OpenSearch default to L2, but L2 is not a Weaviate default and `l2-squared` is not identical to L2. `hfresh` is excluded because it is new and not yet documented as stable for self-provided vectors.
 - **Validation errors** use plain `ValueError` messages so `VectorDBOperator.validate` surfaces them unchanged ("Value error, ...").
-- **Operator-injected keys.** `VectorDBOperator.__init__` adds `available_features`, `feature_mappings`, `add_sparse_vector` (when set), and `schema_template_path` (when set) to `adapter_config`. None of them are `WeaviateConfig` fields, so `extra="ignore"` keeps validation unaffected. The adapter reads `available_features` and `feature_mappings` and applies `add_sparse_vector` (D15). It handles `schema_template_path` by logging one warning that the option is OpenSearch-only and never reading it.
+- **Operator-injected keys.** `VectorDBOperator.__init__` adds `available_features`, `feature_mappings`, `add_sparse_vector` (when set), and `schema_template_path` (when set) to `adapter_config`. None of them are `WeaviateConfig` fields, so `extra="ignore"` keeps validation unaffected. The adapter reads `available_features` and `feature_mappings` and applies `add_sparse_vector` (D14). It handles `schema_template_path` by logging one warning that the option is OpenSearch-only and never reading it.
 - **Constants reused** (no new definitions): `OperatorConstants.VectorDB.HOST`, `PORT`, `USERNAME`, `PASSWORD`, `SECURE`, `AUTH_TYPE`, `COLLECTION_NAME`, `INDEX_TYPE`, `INDEX_PARAMETERS`, plus `OperatorConstants.Config.API_KEY` and `Config.BATCH_SIZE`. `api_key` is already defined in `Config`, so it is not duplicated under `VectorDB`.
 - **Constants added** to `OperatorConstants.VectorDB`: `WEAVIATE`, `CONNECTION_TYPE`, `GRPC_HOST`, `GRPC_PORT`, `GRPC_SECURE`, `CLUSTER_URL`, `BEARER_TOKEN` (with `# pragma: allowlist secret`, as `Config.API_KEY` has, for detect-secrets), `DISTANCE_METRIC`, `TIMEOUT_INIT`, `TIMEOUT_QUERY`, `TIMEOUT_INSERT`, `SKIP_INIT_CHECKS`. `DISTANCE_METRIC` (`"distance_metric"`) is deliberately distinct from Milvus's `METRIC_TYPE` (`"metric_type"`).
 
-*Alternative:* infer cloud vs self-hosted from whether `cluster_url` is set. Rejected because an explicit `connection_type` drives the UI selector and gives deterministic validation messages.
+*Alternative:* infer cloud vs self-hosted from whether `cluster_url` is set. Rejected because an explicit `connection_type` keeps configuration unambiguous and gives deterministic validation messages.
 
 ### D4. Connection and authentication
 
@@ -137,12 +135,12 @@ The application layer (`VectorDBOperator`) touches only `VectorStorePort` and `V
 - **Always declared:** the content property (mapped name of `content`, else `text`) is always declared, as in Milvus. It is `word`-tokenized and `index_searchable` in every mode, so BM25 is available even with `add_sparse_vector` false. `bytes` values are skipped and `None` values are omitted (Weaviate stores the property as null).
 - **Rejected types:** `DATE` is avoided because pipeline dates are not guaranteed RFC 3339. `OBJECT` is avoided because Weaviate requires nested properties to be declared up front.
 - **Property-name checks:** `validate_property_names` runs in `WeaviateAdapter.__init__` before `WeaviateClient.connect`, so bad mappings fail fast without a live server. It applies the regex, the reserved names, the `vector`/`_vector` names, and the reserved suffixes (`_searchable`, `_rangeable`, `_temp`, `__meta_count`, `_propertyLength`, `_nullState`).
-- **Sparse mode (D15):** the `sparse_embeddings` mapping is skipped when building properties and documents, as Milvus skips it on insert.
+- **Sparse mode (D14):** the `sparse_embeddings` mapping is skipped when building properties and documents, as Milvus skips it on insert.
 - **`__init__` order, all before connecting:**
   1. Require `collection_name`.
-  2. If `add_sparse_vector` is true, require a mapping for the content feature (D15).
+  2. If `add_sparse_vector` is true, require a mapping for the content feature (D14).
   3. Warn once on `schema_template_path` (D3).
-  4. Drop and warn on an ACL mapping (D14).
+  4. Drop and warn on an ACL mapping (D13).
   5. Run `validate_property_names` on the remaining mappings.
 
   The filtered mapping list is the one passed to the index manager and batch processor, so a dropped ACL mapping can reach neither the schema nor the objects.
@@ -181,7 +179,7 @@ The application layer (`VectorDBOperator`) touches only `VectorStorePort` and `V
   - `available_resources = sorted(client.collections.list_all(simple=True))`;
   - for an existing selected collection, `selected_resource_schema` with properties as `{type: DATA_TYPE.upper(), is_primary: name == "pk", description}` and named vectors as `{type: "VECTOR", dimension: <sampled or None>, index_info: {index_type, metric_type: distance}, index_created: True}`;
   - `stored_resource_metadata` from the first named vector;
-  - `is_supported`: true for an empty or new name, false with a reason when there are no named vectors, unless `add_sparse_vector` is true and the mapped content property is `index_searchable`. In that sparse-only case `stored_resource_metadata` is `{vector_similarity: None, dimension_size: None}`. Property entries carry `index_searchable` so the UI and tests can see BM25 eligibility. (Milvus's `_is_supported` marks sparse-only collections unsupported; Weaviate deliberately does not, and Milvus is not changed here.)
+  - `is_supported`: true for an empty or new name, false with a reason when there are no named vectors, unless `add_sparse_vector` is true and the mapped content property is `index_searchable`. In that sparse-only case `stored_resource_metadata` is `{vector_similarity: None, dimension_size: None}`. Property entries carry `index_searchable` so enrichment consumers and tests can see BM25 eligibility. (Milvus's `_is_supported` marks sparse-only collections unsupported; Weaviate deliberately does not, and Milvus is not changed here.)
 - **`feature_mappings`:** saved mappings, then live-schema derivation (`pk` → primary feature, first `VECTOR` → first vector feature, identity names; when `add_sparse_vector` is true and the content property is searchable, also the sparse feature → `sparse_embeddings`), then `default_feature_mappings_from_features` (which already adds the sparse and content defaults in sparse mode).
 - **Errors and cleanup:** any exception logs a warning and returns `empty_result()`. The client is closed in `finally`. `MilvusResourceMetadata.fetch` does not close its client; that is a known Milvus gap, deliberately left alone here because this change does not modify the Milvus adapter. The difference is intentional: Weaviate does the right thing, and fixing Milvus belongs in a separate change.
 
@@ -191,83 +189,13 @@ The application layer (`VectorDBOperator`) touches only `VectorStorePort` and `V
 
 - **Pins:** add `"weaviate-client==4.23.1"` to `[project.dependencies]` in both `pyproject.toml` and `slim/pyproject.toml`, keeping alphabetical order.
 - **Locks:** run `uv lock` in the repo root and in `slim/`, then `uv pip install -e ".[dev]"`. Commit both `pyproject.toml` files and both `uv.lock` files together, per `AGENTS.md`.
-- **Expected effect:** `grpcio` resolves to the newest 1.79.x, because pymilvus (`>=1.66.2`), milvus-lite (`>=1.50`), and the telemetry exporter accept it.
+- **Expected effect:** `grpcio` resolves to **1.78.0**, down from 1.84.0. PyPI has no 1.79.x release, and 1.78.1 is yanked, so 1.78.0 is the newest installable version below the `<1.80.0` cap. pymilvus (`>=1.66.2`), milvus-lite (`>=1.50`), and the telemetry exporter accept it. A trial `uv lock` on a copy of the root `pyproject.toml` resolved 499 packages, adding only `weaviate-client 4.23.1` and `validators 0.36.0` and changing only `grpcio`. OSV lists no advisories for 1.78.0. Task 1.1 repeats both checks on the real files, and also runs them for `slim/`.
 - **Decision gate (task 1.1):**
   - If resolution fails, or the downgraded grpcio has a published advisory, stop and ask the maintainers whether to add a scoped `override-dependencies` entry or wait for upstream.
   - A scoped override such as `grpcio>=1.84` runs weaviate-client outside its declared range and would need integration-test evidence.
   - The other path is to wait for upstream to lift `<1.80`.
 
-### D12. Frontend
-
-**Component hierarchy** (new components marked ★; Carbon/IBM Products components named):
-
-```text
-VectorDBPanelBody (VectorDB.tsx)
-├── Dropdown#vectordb-provider                      [existing; options from metadata incl. weaviate]
-├── Accordion.providerAccordion
-│   ├── AccordionItem "Connection"
-│   │   └── ★ WeaviateConnectionSettings            (provider === weaviate)
-│   │       ├── Dropdown#weaviate-connection-type   (Self-hosted | Weaviate Cloud)
-│   │       ├── TextInput#weaviate-host / #weaviate-port / #weaviate-grpc-host / #weaviate-grpc-port
-│   │       ├── Toggle#weaviate-secure
-│   │       └── TextInput#weaviate-cluster-url      (cloud; invalid + invalidText when empty)
-│   ├── AccordionItem "Authentication"
-│   │   └── ★ WeaviateAuthSettings
-│   │       ├── Dropdown#weaviate-auth-type         (None | API key | Bearer token | OIDC username/password)
-│   │       ├── VaultInput#weaviate-api-key | VaultInput#weaviate-bearer-token
-│   │       └── TextInput#weaviate-username + VaultInput#weaviate-password (labelComponent: DefinitionTooltip)
-│   └── AccordionItem "Advanced" → TextArea#vectordb-provider-config-textarea   [existing]
-├── InlineNotification (providerConfigError)        [existing; also used for Weaviate gating message]
-├── VectorDBSummaryTable | NoDataEmptyState          [existing]
-└── VectorDBFeatureMappingTearsheet (Tearsheet)      [existing]
-    ├── ComboBox#resource-select, TextInput#new-resource-name (pattern + placeholder from providerCfg)
-    ├── Dropdown similarity (labels from providerCfg.similarityLabels), Loading, InlineNotification
-    └── Checkbox#add-sparse-vector — rendered when providerCfg.supportsSparseVector (milvus, weaviate); label from providerCfg.sparseVectorLabel
-```
-
-**Data-driven provider differences** (`constants.ts`):
-
-- `VECTORDB_PROVIDERS.WEAVIATE = 'weaviate'`.
-- `DISTANCE_METRIC_LABELS` and `DEFAULT_DISTANCE_METRIC_VALUES`.
-- A `PROVIDER_CONFIG_MAP.weaviate` entry: `resourceNameKey: 'collection_name'`, `resourceLabel: 'collection'`, `similarityKey: 'distance_metric'`, `hasEngine: false`, `resourceSpecificKeys: ['collection_name','distance_metric','index_type']`.
-- New optional `ProviderConfigBase` fields: `resourceNamePattern`, `resourceNamePatternMessage`, `resourceNamePlaceholder`. `validateNewName` applies the pattern when present. The generic placeholder `e.g. my_<label>` stays for others; Weaviate gets `e.g. MyCollection`.
-- New `ProviderConfigBase` fields `supportsSparseVector: boolean` and `sparseVectorLabel: string`:
-  - `opensearch`: `false`;
-  - `milvus`: `true`, label "Compute sparse vectors for hybrid search" (unchanged);
-  - `weaviate`: `true`, label "Enable BM25 sparse retrieval for hybrid search".
-
-  The tearsheet's `provider === VECTORDB_PROVIDERS.MILVUS` check becomes `providerCfg.supportsSparseVector`. The "Milvus-only" comment in `handleSaveFeatureMappings` is updated: `add_sparse_vector` is persisted from the checkbox for sparse-capable providers and as false otherwise.
-- `MANAGED_KEYS_BY_PROVIDER: Record<string, ReadonlySet<string>>` replaces the OpenSearch/Milvus ternary in `VectorDB.tsx`, which removes the fall-through to Milvus keys.
-
-**Pure helpers** (★ `weaviate-config.ts`, unit-testable without rendering):
-
-- `WEAVIATE_MANAGED_KEYS`;
-- `resolveWeaviateDefaults(saved)`, which adds `connection_type`, `host`, `port`, and `grpc_port` defaults for enrichment;
-- `clearWeaviateConnectionFields(saved, nextType)` and `clearWeaviateAuthFields(saved, nextAuthType)`, which return the next config so each switch is one `updatePropertyValue` call;
-- `getWeaviateFieldErrors(saved)`, which returns errors for a missing cluster URL or missing credentials.
-
-`handleOpenTearsheet` refuses to open, and sets `providerConfigError`, while `getWeaviateFieldErrors` is non-empty.
-
-**Interaction map** (no Redux; panel state lives in the Elyra controller, and enrichment goes through the existing API client and BFF `/api/*` proxy):
-
-| User interaction | Call |
-|---|---|
-| Select provider "weaviate" | `controller.updatePropertyValue({name:'provider'}, 'weaviate')` (existing) |
-| Edit host/port/gRPC/secure/cluster URL | `updateProviderConfigField(key, value)` → `controller.updatePropertyValue({name:'provider_config'}, next)` |
-| Change deployment type | `controller.updatePropertyValue({name:'provider_config'}, clearWeaviateConnectionFields(...))` (single write) |
-| Change auth method | `controller.updatePropertyValue({name:'provider_config'}, clearWeaviateAuthFields(...))` (single write; cloud seeds `api_key`) |
-| Edit credential | `updateProviderConfigField('api_key' \| 'bearer_token' \| 'username' \| 'password', v)` stamped with `auth_type` (Milvus pattern) |
-| Open feature mappings | `getWeaviateFieldErrors` gate → `enrichFlowFeaturesForNode(pipelineFlow, nodeId, 'weaviate', resolvedProviderConfig, 'collection_name', ...)` → `POST /api/v1/validation/enrich_flow_features` |
-| Select or create collection, pick distance metric, save | `onSave` → `updatePropertyValue('provider_config', merge(collection_name, distance_metric))` + `updatePropertyValue('feature_mappings', rows)` + `updatePropertyValue('add_sparse_vector', <checkbox state>)` |
-| Toggle the sparse (BM25) checkbox | `handleSparseVectorChange` → `enrichFlowFeaturesForNode(pipelineFlow, nodeId, 'weaviate', baseConfig, 'collection_name', resource, checked)` → `POST /api/v1/validation/enrich_flow_features`; mapping rows replaced with the returned defaults (existing Milvus flow) |
-
-**Styling:** no new SCSS modules. The new components reuse `common.formField`, `common.accordionContent`, and `common.labelWithTooltip` from `CommonPropertiesPanel.module.scss` and `styles.providerAccordion`, so spacing and color come from existing Carbon-token classes. No hex or px literals are introduced.
-
-**Accessibility:** Carbon `Dropdown` and `TextInput` provide the keyboard behavior and `aria-invalid`/`aria-describedby` required by the spec. Revealed fields render immediately after their selector, so DOM order equals tab order. Tests assert both through Testing Library role queries.
-
-**Copy:** `operatorLabels.ts`, `operatorPalette.json`, and the `nodeSuggestion.ts` comment add "Weaviate" to the provider lists.
-
-### D13. Testing strategy
+### D12. Testing strategy
 
 | Level | Location | Scope |
 |---|---|---|
@@ -279,7 +207,6 @@ VectorDBPanelBody (VectorDB.tsx)
 | Unit: enrichment | `test_weaviate_resource_metadata.py` + `test_metadata_fetcher.py` | five keys, supported rules (including sparse-only supported and non-sparse no-vector unsupported), `index_searchable` on property entries, mapping resolution order including sparse defaults, unreachable/no host → empty, client closed; router dispatches `weaviate` |
 | Operator | `test_vectordb_operator.py` | `provider` valid values and `providers.weaviate` schema; mocked adapter returning one failed item → parent document in `failed_docs`; adapter closed on exception |
 | Integration | `tests/integration/weaviate/test_weaviate_with_container.py` (`@pytest.mark.integration`) | I-1 create + write via `VectorDBOperator`; I-2 two named vectors; I-3 re-ingest leaves count unchanged and UUID stable with new text; I-4 shrink deletes tail; I-5 dimension mismatch → FAILED; I-6 pre-created INT property + string value → exactly one failed chunk attributed; I-7 enrichment against live server; I-8 delete >500 primary keys; I-9 sparse plus dense: `collection.query.bm25` and `collection.query.hybrid` both return the target chunk, and the collection config shows k1 = 1.2 and b = 0.75; I-10 sparse-only (no embeddings column): collection has no named vectors, chunks written, BM25 returns them, and a second run passes existing-collection validation |
-| Frontend | `frontend/tests/unit/components/PropertiesPanel/CustomPanels/VectorDB/` | `weaviate-config.test.ts` (helpers); `VectorDB.test.tsx` (field rendering, atomic switches, defaults passed to enrichment, gating, managed keys, keyboard selection); `VectorDBFeatureMappingTearsheet.test.tsx` (pattern validation, placeholder, sparse checkbox shown for Weaviate with its label, Space toggles and re-enriches, saved keys including `add_sparse_vector`, Milvus label unchanged, OpenSearch hidden); `vectordb-enrichment.test.ts` (`collection_name` key) |
 
 The integration server comes from `docker/docker-compose.weaviate.yml`: image `cr.weaviate.io/semitechnologies/weaviate:1.40.1`, ports 8080/50051, and environment `AUTHENTICATION_ANONYMOUS_ACCESS_ENABLED=true`, `PERSISTENCE_DATA_PATH=/var/lib/weaviate`, `DEFAULT_VECTORIZER_MODULE=none`, `AUTOSCHEMA_ENABLED=false`, `CLUSTER_HOSTNAME=node1`.
 
@@ -287,7 +214,7 @@ The suite follows the OpenSearch container test's skip-if-no-Docker helpers and 
 
 **Auto-schema guard.** A session-scoped fixture creates a scratch collection with one declared property and inserts an object carrying an undeclared property. If the server accepts it, auto-schema is on, and the whole suite **fails** (not skips) with a message that `AUTOSCHEMA_ENABLED=false` is required. This matters most for externally supplied `DOCPIPE_TEST_WEAVIATE_HOST` servers. Without the guard, any scenario could pass on a server that silently added properties the adapter failed to declare itself. (A value of the wrong type for an already-declared property is rejected regardless of auto-schema; the guard protects the "never relies on auto-schema" claim, not the type check.)
 
-### D14. ACL: dropped with a warning, never enforced
+### D13. ACL: dropped with a warning, never enforced
 
 **How ACL works today.** `ACLOperator` emits an `allowed_users` column (a JSON-array string flagged `available_for_opensearch`). Nothing in `core/operators/vectordb/` handles it; it reaches OpenSearch only when a user maps it. Enforcement lives entirely in the API layer: `api/services/acl_query_builder.py` adds an `allowed_users` term filter to OpenSearch reads in `api/routes/documents.py`. Weaviate has no read path in docpipe, so there is nothing that could enforce an ACL stored there.
 
@@ -304,7 +231,7 @@ The suite follows the OpenSearch container test's skip-if-no-Docker helpers and 
 - Reject a mapped `allowed_users` at startup. This is stricter, but was not chosen in review: a flow that maps `allowed_users` keeps running on Weaviate, with the warning as the signal.
 - Store it as a plain TEXT property. Rejected because the data would look access-controlled when nothing enforces it, and any Weaviate client could read it.
 
-### D15. Sparse (BM25) mode at parity with Milvus
+### D14. Sparse (BM25) mode at parity with Milvus
 
 | Concern | Milvus provider (today) | Weaviate provider |
 |---|---|---|
@@ -315,9 +242,8 @@ The suite follows the OpenSearch container test's skip-if-no-Docker helpers and 
 | Sparse-only runs (no dense columns) | supported via the operator's empty `dimension_mapping` | same path; collection created without `vector_config`; vector validation skipped |
 | Flag off | no analyzer, so no BM25 | content stays `index_searchable` (Weaviate default), so BM25 is still available |
 | Enrichment `is_supported` for sparse-only collections | unsupported (no `FLOAT_VECTOR`) | supported when the content property is searchable |
-| UI checkbox | shown | shown, with a Weaviate-specific label |
 
-- **Precedence:** as for Milvus, `VectorDBOperator.__init__` copies the top-level `add_sparse_vector` into `adapter_config`, overriding any `provider_config.add_sparse_vector`. The operator's own dimension resolution reads only the top-level flag. The top-level flag, which the UI writes, is therefore the supported switch. Setting it only inside `provider_config` enables the adapter's BM25 configuration but not sparse-only runs, and the README says so.
+- **Precedence:** as for Milvus, `VectorDBOperator.__init__` copies the top-level `add_sparse_vector` into `adapter_config`, overriding any `provider_config.add_sparse_vector`. The operator's own dimension resolution reads only the top-level flag. The top-level flag is therefore the supported switch. Setting it only inside `provider_config` enables the adapter's BM25 configuration but not sparse-only runs, and the README says so.
 - **Querying** stays a non-goal (proposal). Consumers run `collection.query.bm25(...)` or `collection.query.hybrid(...)` themselves; the README shows both.
 
 **Alternatives.**
@@ -328,7 +254,7 @@ The suite follows the OpenSearch container test's skip-if-no-Docker helpers and 
 
 ## Risks / Trade-offs
 
-- **[grpcio cap forces a downgrade from 1.84.0 to 1.79.x]** → Gated in task 1.1 (D11). Run the Milvus, OpenSearch, and telemetry unit suites plus the Milvus Lite integration test after relocking, and check advisories for the resolved version. If either check fails, escalate instead of forcing an override.
+- **[grpcio cap forces a downgrade from 1.84.0 to 1.78.0]** → Gated in task 1.1 (D11). Run the Milvus, OpenSearch, and telemetry unit suites plus the Milvus Lite integration test after relocking, and check advisories for the resolved version. If either check fails, escalate instead of forcing an override.
 - **[Offset paging capped at `QUERY_MAXIMUM_RESULTS` for stale lookup]** → A single file with more than 10,000 chunks would leave older tail chunks undeleted. A warning is logged with the file ID, and the README documents raising `QUERY_MAXIMUM_RESULTS`. Chunk counts per file are far below this in practice.
 - **[Dimension is only checkable by sampling]** → An empty collection skips the check, so the first insert fixes the dimension. A later wrong dimension then fails per object, which is still reported per chunk (D6).
 - **[UUIDv5 upsert relies on replace-on-existing-UUID batch semantics]** → Integration test I-3 asserts it against the pinned server version. If the semantics differed, the stale-cleanup path would still prevent duplicates, but in-place updates would surface as per-object errors.
@@ -337,10 +263,9 @@ The suite follows the OpenSearch container test's skip-if-no-Docker helpers and 
 - **[Users expect ACL enforcement with Weaviate]** → The dropped mapping and the unenforced-ACL warning both appear in the run log, the README's Troubleshooting section states that ACL is OpenSearch-only, and the proposal lists ACL as a non-goal. Because a mapped `allowed_users` is dropped rather than rejected, the warning is the main signal; task 5.4 makes it prominent in the docs.
 - **[Sparse-only runs with memory-mapped chunks]** → `VectorDBOperator._extract_chunks_for_row` takes the file-streaming path only when both chunk and vector file references exist. With no vector columns, memmap-backed `chunked_content` falls into the in-memory path and the document fails. This is an existing operator limitation shared by Milvus sparse-only runs; this change does not modify the operator. It is documented in the README, and I-10 uses in-memory chunks.
 - **[BM25 parameters are fixed]** → They match Milvus's hardcoded values. Exposing them would be an additive change later.
-- **[`add_sparse_vector` set only in `provider_config`]** → The README states that the top-level flag is authoritative (D15 precedence).
+- **[`add_sparse_vector` set only in `provider_config`]** → The README states that the top-level flag is authoritative (D14 precedence).
 - **[`schema_template_path` silently has no effect]** → One warning names the ignored option, and the README documents it as OpenSearch-only.
 - **[Server-default quantization may be lossy (`DEFAULT_QUANTIZATION`)]** → Documented in the README. Configuring quantization is a non-goal.
-- **[VectorDB.tsx grows]** → Weaviate UI is isolated in two new components plus pure helpers. Provider branching stays at the existing `provider === ...` render points.
 - **[Two lockfiles (root and slim)]** → Both are regenerated in the same commit, and task 1.1 verifies `uv lock --check` in each.
 
 ## Migration Plan
