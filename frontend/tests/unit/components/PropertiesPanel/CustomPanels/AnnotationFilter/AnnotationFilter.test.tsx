@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { renderWithProviders } from '../../../../../utils/renderWithProviders';
 import { screen, fireEvent } from '@testing-library/react';
+import { renderWithProviders } from '../../../../../utils/renderWithProviders';
 import React from 'react';
 import { AnnotationFilterPanelBody } from '@/components/PropertiesPanel/CustomPanels/AnnotationFilter/AnnotationFilter';
 import type { CriteriaJson } from '@/components/PropertiesPanel/CustomPanels/AnnotationFilter/conditionTypes';

@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
-import { renderWithProviders } from '../../../../../utils/renderWithProviders';
 import { screen, fireEvent } from '@testing-library/react';
+import { renderWithProviders } from '../../../../../utils/renderWithProviders';
 import React from 'react';
 import { DocumentSetPanelBody } from '@/components/PropertiesPanel/CustomPanels/DocumentSet/DocumentSet';
 

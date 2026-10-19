@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { renderWithProviders } from '../../../../../utils/renderWithProviders';
 import { screen, act, fireEvent, waitFor } from '@testing-library/react';
+import { renderWithProviders } from '../../../../../utils/renderWithProviders';
 import { DocumentClassifierPanelBody } from '@/components/PropertiesPanel/CustomPanels/DocumentClassifier/DocumentClassifier';
 
 // Mock the document classes API

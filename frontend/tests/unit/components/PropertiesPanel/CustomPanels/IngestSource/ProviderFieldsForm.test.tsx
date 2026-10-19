@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
-import { renderWithProviders } from '../../../../../utils/renderWithProviders';
 import { fireEvent } from '@testing-library/react';
+import { renderWithProviders } from '../../../../../utils/renderWithProviders';
 import { ProviderFieldsForm } from '@/components/PropertiesPanel/CustomPanels/shared/ProviderFieldsForm';
 
 describe('ProviderFieldsForm', () => {
@@ -71,7 +71,7 @@ describe('ProviderFieldsForm', () => {
     expect(document.getElementById('provider-field-secret_key')).not.toBeNull();
   });
 
-  it('renders list field as TagInput', () => {
+  it('renders list field as ListInput', () => {
     const { container } = renderWithProviders(
       <ProviderFieldsForm
         properties={{ paths: { type: 'list', label: 'Paths', description: 'List of paths' } as any }}

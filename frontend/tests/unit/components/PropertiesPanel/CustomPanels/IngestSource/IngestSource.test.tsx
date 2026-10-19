@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { renderWithProviders } from '../../../../../utils/renderWithProviders';
 import { screen, fireEvent } from '@testing-library/react';
+import { renderWithProviders } from '../../../../../utils/renderWithProviders';
 import { IngestSourcePanelBody } from '@/components/PropertiesPanel/CustomPanels/IngestSource/IngestSource';
 
 const FILESYSTEM_METADATA = {

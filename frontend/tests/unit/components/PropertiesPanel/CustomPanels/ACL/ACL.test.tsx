@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
-import { renderWithProviders } from '../../../../../utils/renderWithProviders';
 import { screen, fireEvent } from '@testing-library/react';
+import { renderWithProviders } from '../../../../../utils/renderWithProviders';
 import { ACLPanelBody } from '@/components/PropertiesPanel/CustomPanels/ACL/ACL';
 
 function makeController(overrides: Record<string, unknown> = {}) {
