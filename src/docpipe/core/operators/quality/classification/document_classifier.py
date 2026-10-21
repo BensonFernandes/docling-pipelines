@@ -13,6 +13,7 @@ from typing import Any
 import pyarrow as pa
 from data_processing.utils import TransformUtils
 
+import docpipe.core.operators.quality.classification.adapters.outbound  # noqa: F401  (registers adapters)
 from docpipe.core.constants import AttributeDataTypes, DocpipeConstants, Metrics, OperatorConstants
 from docpipe.core.operators.abstract_operator import AbstractOperator, OperatorCategory
 from docpipe.core.operators.operator_utils import OperatorUtils
@@ -184,11 +185,6 @@ class DocumentClassifierOperator(AbstractOperator):  # type: ignore[misc]
         self.include_confidence: bool = config.get(OperatorConstants.Config.INCLUDE_CONFIDENCE, True)
         self.include_reasoning: bool = config.get(OperatorConstants.Config.INCLUDE_REASONING, False)
 
-        # Content length limit
-        self.max_content_length: int = config.get(
-            OperatorConstants.Config.MAX_CONTENT_LENGTH, OperatorConstants.Classification.DEFAULT_MAX_CONTENT_LENGTH
-        )
-
         # Job tracking context for progress updates
         self.batch_id = config.get(DocpipeConstants.BATCH_ID)
 
@@ -256,7 +252,11 @@ class DocumentClassifierOperator(AbstractOperator):  # type: ignore[misc]
         if self.should_validate_field(field_value=self.provider):
             supported_providers = ClassificationAdapterFactory.get_supported_providers()
             if self.provider not in supported_providers:
-                errors.append(f"provider must be one of {sorted(supported_providers)}, got '{self.provider}'")
+                deprecation_message = ClassificationAdapterFactory.get_deprecation_message(self.provider)
+                if deprecation_message is not None:
+                    errors.append(deprecation_message)
+                else:
+                    errors.append(f"provider must be one of {sorted(supported_providers)}, got '{self.provider}'")
 
         # Validate document types (may be resolved from the document class provider)
         try:
@@ -335,6 +335,7 @@ class DocumentClassifierOperator(AbstractOperator):  # type: ignore[misc]
         self,
         *,
         content: str | None,
+        document_types: list[str] | dict[str, str],
         binary_content: bytes | None = None,
         doc_name: str | None = None,
     ) -> dict[str, Any]:
@@ -348,6 +349,7 @@ class DocumentClassifierOperator(AbstractOperator):  # type: ignore[misc]
 
         Args:
             content: Existing document text, or ``None`` when not available
+            document_types: Document types to classify into, resolved once per batch by :meth:`transform`
             binary_content: Raw document bytes, or ``None`` when text is given
             doc_name: Optional document name for logging
 
@@ -364,7 +366,7 @@ class DocumentClassifierOperator(AbstractOperator):  # type: ignore[misc]
                 doc_name=doc_name or "",
                 binary_content=binary_content,
                 existing_text=content,
-                document_types=self.document_types,
+                document_types=document_types,
             )
 
             if not response.success:
@@ -476,6 +478,9 @@ class DocumentClassifierOperator(AbstractOperator):  # type: ignore[misc]
             logger.warning("Output column '%s' already present. Moving to next operator", self.output_column)
             return [table], metadata
 
+        # Resolve once before the thread pool so a remote DocumentClassProvider is not hit concurrently.
+        document_types = self.document_types
+
         doc_column_exists = self.doc_column in table.column_names
         content_was_fetched = False
         doc_contents: list[Any] = [None] * table.num_rows
@@ -570,6 +575,7 @@ class DocumentClassifierOperator(AbstractOperator):  # type: ignore[misc]
                     executor,
                     self._classify_document,
                     content=content if has_text else None,
+                    document_types=document_types,
                     binary_content=None if has_text else binary_content,
                     doc_name=doc_name,
                 )
@@ -817,7 +823,7 @@ class DocumentClassifierOperator(AbstractOperator):  # type: ignore[misc]
                 OperatorConstants.Config.PROVIDER_CONFIG: {
                     OperatorConstants.Misc.NAME: "Provider Configuration",
                     OperatorConstants.Config.DESCRIPTION: "Provider-specific configuration. Fields vary by provider — see the 'providers' schema for details.",
-                    OperatorConstants.Config.REQUIRED: True,
+                    OperatorConstants.Config.REQUIRED: False,
                     OperatorConstants.Misc.TYPE: AttributeDataTypes.JSON,
                     OperatorConstants.Config.PROVIDERS: DocumentClassifierOperator._get_classifier_provider_schemas(),
                 },
