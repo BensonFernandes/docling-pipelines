@@ -218,17 +218,19 @@ Never import an `adapters/` class from `domain/` or `application/`. Domain ports
     - In practice, almost all private methods and attributes in this codebase should use `_` (single). Reserve `__` for the rare case where name mangling is the explicit intent.
     - Never use `__name__` (dunder) style for anything other than Python special/magic methods (`__init__`, `__repr__`, `__enter__`, etc.).
 
-17. **Strict Port / ABC contract conformity (1:1 mapping)**:
-    When writing or specifying an adapter implementing a port interface (`VectorStorePort`, `LLMInferencePort`, `LLMEmbeddingPort`, etc.):
-    - The adapter's public methods **must have an exact 1:1 match** to the method names, parameter signatures, and return contracts defined on the abstract port class.
-    - Adapters must **never** invent alternate public method names (e.g., using `create_collection` instead of `create_index`, `collection_exists` instead of `index_exists`, or `validate_existing_collection` instead of `validate_existing_schema`).
-    - Internal helper classes or modules (e.g., `index_manager`, `batch_processor`) must be invoked via delegation from the conforming port methods (e.g., `index_documents` explicitly calling `create_batches` + `process_batches`).
-    - In OpenSpec `design.md` and `tasks.md`, the adapter specification must explicitly tabulate this 1:1 mapping against the port ABC before implementation begins.
+17. **Port / ABC contract conformity**:
+    Applies to every **new** adapter implementing a port interface (`VectorStorePort`, `LLMInferencePort`, `LLMEmbeddingPort`, etc.). Existing adapters that predate this rule (e.g., `LiteLLMAdapter.get_embedding_dimension` adding `model_name`) are not retroactively in scope; do not widen unrelated changes to fix them.
+    - For every abstract method on the port, the adapter's public method must use the **same name, the same parameters (names, order, keyword-only markers) and the same return type**. Exceptions documented on the port must also be preserved.
+    - The port defines **provider-neutral vocabulary** (e.g., `create_index`, `index_exists`, `validate_existing_schema`). Do not expose a provider-native name as the public method for a port operation (e.g., a public `create_collection` on `MilvusAdapter` instead of `create_index`).
+    - Provider-native terminology (e.g., Milvus "collection", Weaviate "class"/"collection", OpenSearch "index") belongs **inside** the adapter's internal helpers (e.g., `index_manager`), which are not part of the port contract and may use their own names and signatures. The port-conforming method delegates to them (e.g., `create_index` -> `index_manager.create_collection`). Do not prescribe helper names in specs.
+    - Extras are allowed only if backward compatible with the port: additional optional keyword parameters with defaults, or methods belonging to another port the adapter also implements. Do not add other public methods.
+    - In OpenSpec `design.md` and `tasks.md`, tabulate the mapping `port method -> adapter method -> provider-native helper` against the port ABC before implementation begins.
 
 18. **Shared / multi-provider function docstring & comment audits**:
     When an existing utility or multi-provider function (e.g., `compute_default_feature_mappings`, provider factories, metadata extractors) is extended or reused by a new provider:
-    - Any provider-specific comments, docstrings, or annotations (e.g., `[Milvus only]` or `[Milvus, add_sparse_vector=True only]`) **must be audited and updated** to reflect the new provider.
-    - In OpenSpec changes, updating these comments and docstrings must be an **explicit, dedicated task/subtask** in `tasks.md`.
+    - Audit every provider-specific comment, docstring (including `Args:` text, not only rule lists) or annotation (e.g., `[Milvus only]`, `[Milvus, add_sparse_vector=True only]`) and update it.
+    - Prefer **capability-based wording** (e.g., "when the provider supports sparse vectors") over enumerating provider names, so the text does not go stale when the next provider is added.
+    - In OpenSpec changes, updating these comments and docstrings must be an **explicit, dedicated task** in `tasks.md`.
 
 ## Environment Variables
 
@@ -354,5 +356,5 @@ openspec archive <name>
 - Run `openspec validate <name> --strict` before handing off for implementation.
 - The `openspec/changes/archive/` directory is the historical record — do not edit archived changes.
 - New capabilities must use `backend/*` for Python API/engine/operator work, or `frontend/*` for React page and component work.
-- **Port/ABC Contract Verification**: Before implementing any adapter, verify against the abstract port ABC that all method names and signatures match 1:1. Never allow design docs or task lists to diverge from the abstract port signature.
-- **Multi-Provider Audit Task**: When reusing existing helper functions across providers, `tasks.md` must include an explicit task to update docstrings and provider-specific comments.
+- **Port/ABC Contract Verification**: `design.md` and `tasks.md` for any new adapter must include the port-to-adapter mapping table required by Rule 17.
+- **Multi-Provider Audit Task**: `tasks.md` must include the explicit docstring/comment audit task required by Rule 18 whenever an existing helper is reused by another provider.
