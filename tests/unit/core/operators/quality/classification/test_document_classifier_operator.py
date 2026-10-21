@@ -133,7 +133,7 @@ class TestValidate:
             "docpipe.core.operators.quality.classification.document_classifier.ClassificationAdapterFactory"
         ) as mock_factory:
             mock_factory.create_adapter.return_value = mock_adapter
-            mock_factory.get_supported_providers.return_value = {"litellm", "watsonx", "standard"}
+            mock_factory.get_supported_providers.return_value = {"litellm", "watsonx"}
             op = DocumentClassifierOperator(config=_LITELLM_CONFIG)
 
             errors: list[str] = []

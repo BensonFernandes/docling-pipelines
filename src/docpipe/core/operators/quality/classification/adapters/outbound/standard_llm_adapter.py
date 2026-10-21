@@ -207,8 +207,9 @@ class StandardLLMClassificationAdapter(ClassificationPort):
     live in :meth:`from_config`, making the factory a pure dispatcher.
 
     Class attributes:
-        ADAPTER_NAME: ``"standard"`` — the key under which this adapter is
-            registered in :class:`ClassificationAdapterFactory`.
+        ADAPTER_NAME: ``"standard"`` — the internal key under which this adapter is
+            registered in :class:`ClassificationAdapterFactory`.  It is not a valid
+            ``provider`` value in a flow.
         ADAPTER_DISPLAY_NAME: Human-readable label.
     """
 
@@ -264,8 +265,8 @@ class StandardLLMClassificationAdapter(ClassificationPort):
         Args:
             config: Full operator config dictionary.  Must contain:
 
-                * ``provider`` — one of ``"litellm"`` or ``"watsonx"``; the
-                  ``"standard"`` adapter name selects the default provider.
+                * ``provider`` — one of ``"litellm"`` or ``"watsonx"``.  Defaults
+                  to ``"litellm"`` when absent.
                 * ``provider_config`` — dict with optional model_id and connection parameters.
                   Required for ``litellm``; optional for ``watsonx``, which falls
                   back to the ``WATSONX_*`` environment variables.
@@ -282,17 +283,14 @@ class StandardLLMClassificationAdapter(ClassificationPort):
         """
         provider_config: dict[str, Any] = config.get(OperatorConstants.Config.PROVIDER_CONFIG) or {}
 
-        # A missing provider or the adapter's own name ("standard") selects the default provider.
-        raw_provider: str = (
+        # A missing provider selects the default provider (same default the operator applies).
+        llm_provider: str = (
             config.get(OperatorConstants.Config.PROVIDER) or OperatorConstants.Classification.DEFAULT_PROVIDER
         ).lower()
-        llm_provider = (
-            OperatorConstants.Classification.DEFAULT_PROVIDER if raw_provider == cls.ADAPTER_NAME else raw_provider
-        )
         supported_providers = LLMAdapterFactory.get_supported_providers(capability="inference")
         if llm_provider not in supported_providers:
             raise ValueError(
-                f"Unsupported provider '{raw_provider}' for StandardLLMClassificationAdapter. "
+                f"Unsupported provider '{llm_provider}' for StandardLLMClassificationAdapter. "
                 f"Supported providers: {sorted(supported_providers)}"
             )
 

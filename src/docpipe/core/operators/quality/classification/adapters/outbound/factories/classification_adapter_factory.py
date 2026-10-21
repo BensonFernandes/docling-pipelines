@@ -34,16 +34,17 @@ class ClassificationAdapterFactory:
 
     Aliases
     -------
-    ``_PROVIDER_ALIASES`` maps flow-JSON provider strings that are *not* an
-    ``ADAPTER_NAME`` to the ``ADAPTER_NAME`` they should resolve to.  For
-    example ``"litellm"`` and ``"watsonx"`` both resolve to ``"standard"``.
+    ``_PROVIDER_ALIASES`` is the only list of valid flow-JSON provider strings.
+    Each maps to the ``ADAPTER_NAME`` it resolves to.  For example ``"litellm"``
+    and ``"watsonx"`` both resolve to ``"standard"``.  ``ADAPTER_NAME`` is an
+    internal registry key and is not itself a valid provider string.
     """
 
     # Registry: ADAPTER_NAME → adapter class
     _REGISTRY: ClassVar[dict[str, type[ClassificationPort]]] = {}
 
     # Alias table: flow-JSON provider string → ADAPTER_NAME
-    # Add a new entry here when a new adapter accepts multiple provider strings.
+    # Add an entry here for every provider string a new adapter accepts.
     _PROVIDER_ALIASES: ClassVar[dict[str, str]] = {
         "litellm": "standard",
         "watsonx": "standard",
@@ -104,9 +105,9 @@ class ClassificationAdapterFactory:
             raise ValueError(cls._DEPRECATED[normalised])
 
         # Resolve alias → canonical ADAPTER_NAME.
-        resolved = cls._PROVIDER_ALIASES.get(normalised, normalised)
+        resolved = cls._PROVIDER_ALIASES.get(normalised)
 
-        adapter_class = cls._REGISTRY.get(resolved)
+        adapter_class = cls._REGISTRY.get(resolved) if resolved is not None else None
         if adapter_class is None:
             supported = sorted(cls.get_supported_providers())
             raise ValueError(f"Unknown classification provider: {provider!r}. Supported values: {supported}")
@@ -125,14 +126,14 @@ class ClassificationAdapterFactory:
 
     @classmethod
     def get_supported_providers(cls) -> set[str]:
-        """Return all valid provider strings (registered names + aliases).
+        """Return all valid provider strings (the alias table keys).
 
         Deprecated providers are excluded.
 
         Returns:
             Set of valid provider name strings accepted by :meth:`create_adapter`.
         """
-        return set(cls._REGISTRY) | set(cls._PROVIDER_ALIASES)
+        return set(cls._PROVIDER_ALIASES)
 
 
 def register_classification_adapter(adapter_class: type[ClassificationPort]) -> type[ClassificationPort]:

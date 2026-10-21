@@ -680,7 +680,8 @@ class ClassificationPort(ABC):
 
 ### StandardLLMClassificationAdapter
 
-Built-in adapter registered as `"standard"`. It serves the `litellm` and `watsonx` providers and
+Built-in adapter registered internally as `"standard"` (a registry key, not a valid `provider` value).
+It serves the `litellm` and `watsonx` providers and
 builds its `LLMInferencePort` through `LLMAdapterFactory` in `from_config()`. See the
 [Architecture](#architecture) section for how the operator, factory, and adapter interact.
 

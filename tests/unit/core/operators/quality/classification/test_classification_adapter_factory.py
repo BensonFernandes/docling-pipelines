@@ -67,11 +67,10 @@ class TestRegistry:
         # clean up so other tests aren't affected
         del ClassificationAdapterFactory._REGISTRY["_fake_test_adapter"]
 
-    def test_get_supported_providers_includes_aliases(self) -> None:
+    def test_get_supported_providers_are_the_alias_keys(self) -> None:
         supported = ClassificationAdapterFactory.get_supported_providers()
-        assert "litellm" in supported
-        assert "watsonx" in supported
-        assert "standard" in supported
+        assert supported == {"litellm", "watsonx"}
+        assert "standard" not in supported
 
     def test_get_supported_providers_excludes_deprecated(self) -> None:
         supported = ClassificationAdapterFactory.get_supported_providers()
@@ -99,12 +98,12 @@ class TestAliasResolution:
             ClassificationAdapterFactory.create_adapter(provider="watsonx", config=_WATSONX_CONFIG)
         mock_fc.assert_called_once_with(_WATSONX_CONFIG)
 
-    def test_standard_name_resolves_directly(self) -> None:
-        """'standard' matches the ADAPTER_NAME directly (no alias needed)."""
+    def test_standard_is_not_a_valid_provider(self) -> None:
+        """'standard' is the internal ADAPTER_NAME, not a provider string."""
         with patch.object(StandardLLMClassificationAdapter, "from_config") as mock_fc:
-            mock_fc.return_value = MagicMock(spec=StandardLLMClassificationAdapter)
-            ClassificationAdapterFactory.create_adapter(provider="standard", config=_LITELLM_CONFIG)
-        mock_fc.assert_called_once_with(_LITELLM_CONFIG)
+            with pytest.raises(ValueError, match="Unknown classification provider"):
+                ClassificationAdapterFactory.create_adapter(provider="standard", config=_LITELLM_CONFIG)
+        mock_fc.assert_not_called()
 
     def test_provider_string_is_case_insensitive(self) -> None:
         """Provider strings are normalised to lower-case before resolution."""
@@ -141,7 +140,8 @@ class TestInvalidProviders:
                 config={"provider": "openai", "provider_config": {}, "document_types": []},
             )
         # Error message should name at least one known provider
-        assert "litellm" in str(exc_info.value) or "standard" in str(exc_info.value)
+        assert "litellm" in str(exc_info.value)
+        assert "watsonx" in str(exc_info.value)
 
 
 # ---------------------------------------------------------------------------

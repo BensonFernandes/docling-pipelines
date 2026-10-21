@@ -144,9 +144,9 @@ class TestFromConfig:
             provider_config=_BASE_CONFIG["provider_config"],
         )
 
-    def test_standard_adapter_name_selects_default_provider(self) -> None:
-        """The 'standard' adapter name resolves to the DEFAULT_PROVIDER (litellm)."""
-        config = {**_BASE_CONFIG, "provider": "standard"}
+    def test_missing_provider_uses_default_provider(self) -> None:
+        """An absent provider key resolves to the DEFAULT_PROVIDER (litellm), as the operator does."""
+        config = {k: v for k, v in _BASE_CONFIG.items() if k != "provider"}
         mock_llm = _make_mock_llm_adapter()
         with (
             patch(
@@ -161,8 +161,13 @@ class TestFromConfig:
             StandardLLMClassificationAdapter.from_config(config)
 
         call_kwargs = mock_factory_cls.create_inference_adapter.call_args.kwargs
-        # Must NOT forward "standard" to LLMAdapterFactory - uses default provider
         assert call_kwargs["provider"] == OperatorConstants.Classification.DEFAULT_PROVIDER
+
+    def test_standard_is_rejected_as_provider(self) -> None:
+        """'standard' is the adapter's registry name, not a provider; it must not fall back to litellm."""
+        config = {**_BASE_CONFIG, "provider": "standard"}
+        with pytest.raises(ValueError, match="Unsupported provider 'standard'"):
+            StandardLLMClassificationAdapter.from_config(config)
 
     def test_unsupported_provider_raises_with_supported_list(self) -> None:
         """An unsupported provider no longer falls back silently to litellm."""
