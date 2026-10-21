@@ -23,6 +23,19 @@ bounded, deterministic keyword counter gives lexical enrichment without regex ri
 - Register the operator in `DOCPIPE_OPERATORS` and document it (operator README, operator reference, README table, and
   a sample flow).
 
+## Matching Mode Comparison
+
+| Dimension | Literal (`google-re2`) | Stem (NLTK `SnowballStemmer`) | Lemma (spaCy pipeline) |
+|---|---|---|---|
+| **Underlying approach** | Deterministic finite automaton over Unicode characters; keyword text treated as literal bytes, never as pattern syntax. | Heuristic suffix/prefix stripping rules; no dictionary or vocabulary required. | Morphological analysis with part-of-speech tagging; uses an installed language model package. |
+| **Linguistic awareness** | None. Matches exact character sequences. | Low. Reduces predictable inflected endings without vocabulary knowledge. | High. Resolves word forms using grammar and local sentence context. |
+| **Output form** | Original keyword string matched verbatim. | Truncated stem (often not a valid dictionary word, e.g. `studi`). | Canonical lemma (valid dictionary base form, e.g. `study`). |
+| **Contextual sensitivity** | None. | None. Words processed independently. | Context-aware: `saw` (tool) and `saw` (past of see) resolve to different lemmas. |
+| **Network / I/O at runtime** | Zero. RE2 compiled at import. | Zero. Algorithmic; no corpora loaded. | Zero at runtime. Pipeline package must be installed in advance; never downloaded by the operator. |
+| **Execution performance** | Fast; linear over document length. | Fast; uniform across large inputs. | Higher resource footprint; slower per document due to pipeline inference. |
+| **Case folding** | Simple Unicode case folding via RE2 (no multi-character folds such as `straße` → `SS`). | `str.casefold()` applied to tokens before stemming. | `str.casefold()` applied to lemmas. |
+| **Phrase handling** | Exact character sequence; whitespace and punctuation are literal. | Token-sequence match; extra whitespace between tokens is ignored, punctuation is significant. | Token-sequence match on lemmas; extra whitespace ignored, punctuation significant. |
+
 ## Capabilities
 
 ### New Capabilities
