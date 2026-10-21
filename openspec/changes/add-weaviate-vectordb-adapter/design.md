@@ -2,7 +2,7 @@
 
 ## Context
 
-See [proposal.md](proposal.md) for motivation and scope. The requirements are in [specs/backend/vectordb-operator/spec.md](specs/backend/vectordb-operator/spec.md).
+See [proposal.md](proposal.md) for motivation and scope. The requirements are in [specs/backend/vectordb-operator/spec.md](specs/backend/vectordb-operator/spec.md) (provider-agnostic contract) and [specs/backend/vectordb-weaviate/spec.md](specs/backend/vectordb-weaviate/spec.md) (Weaviate provider).
 
 **Current shape of the VectorDB operator.** It is hexagonal:
 
@@ -64,10 +64,25 @@ New package `core/operators/vectordb/adapters/outbound/weaviate/`. Its `__init__
 |---|---|---|
 | `config.py` | adapter (config contract) | `ADAPTER_NAME = "weaviate"`, `WeaviateConfig(BaseModel, extra="ignore")`. Field validators carry the spec's messages. A `model_validator(mode="after")` enforces cross-field rules (cloud → `cluster_url`; `auth_type` → its credentials). |
 | `client.py` | adapter (infrastructure) | `WeaviateClient`: build credentials, connect (`connect_to_custom` / `connect_to_weaviate_cloud`), `is_ready()` check, `get_client()`, `close()`. Errors become `DocpipeException(status_code=503, OPERATOR_EXECUTION_FAILED)` naming the target, never the secrets. |
-| `index_manager.py` | adapter | Static name and type rules (`validate_property_names`, `map_feature_type`, `tokenization_for`), `collection_exists`, `create_collection`, `validate_existing_collection`, `drop_collection` (used by tests). |
+| `index_manager.py` | adapter | Static name and type rules (`validate_property_names`, `map_feature_type`, `tokenization_for`), `collection_exists`, `create_collection`, `validate_existing_collection`, `drop_collection` (used by tests). These are internal; the adapter exposes them through port methods (see below). |
 | `batch_processor.py` | adapter | `prepare_document`, `create_batches`, `process_batches`, `delete_documents_by_ids`, `get_document_count`, `get_chunk_ids_for_documents`, `query_by_doc_names`. |
-| `adapter.py` | adapter (port implementation) | `@register_vector_store class WeaviateAdapter(VectorStorePort)` wiring the three components. Fail-fast checks run before connecting. |
+| `adapter.py` | adapter (port implementation) | `@register_vector_store class WeaviateAdapter(VectorStorePort)` wiring the three components. Fail-fast checks run before connecting. Public methods use the `VectorStorePort` names and delegate as the Milvus adapter does (table below). |
 | `resource_metadata.py` | adapter (read-only) | `WeaviateResourceMetadata.fetch(...)`, with the same injected-callable signature as `MilvusResourceMetadata`. |
+
+**Port-method delegation** (same shape as `MilvusAdapter`):
+
+| `VectorStorePort` method on `WeaviateAdapter` | Delegates to |
+|---|---|
+| `create_index(*, dimension_mapping)` | `index_manager.create_collection(dimension_mapping=...)` |
+| `validate_existing_schema(*, dimension_mapping)` | `index_manager.validate_existing_collection(dimension_mapping=...)` |
+| `index_exists()` | `index_manager.collection_exists()` |
+| `index_documents(documents)` | `batch_processor.create_batches(...)` then `batch_processor.process_batches(...)` |
+| `delete_documents_by_ids`, `get_document_count`, `get_chunk_ids_for_documents`, `query_by_doc_names` | the `batch_processor` method of the same name |
+| `detect_vector_dimension(*, table, column_name)` | shared `detect_vector_dimension` in `docpipe/utils/operators/vectordb_utils.py`; `column_name=None` falls back to `self.embeddings_column`, read from the adapter config key `OperatorConstants.Columns.EMBEDDINGS_COLUMN` and defaulting to `EMBEDDINGS_COLUMN_DEFAULT` |
+| `detect_all_vector_dimensions(table, *, vector_columns)` | shared `detect_all_vector_dimensions` in `docpipe/utils/operators/vectordb_utils.py` |
+| `generate_chunk_pk`, `refresh_index`, `close` | `generate_positional_pk` (D5), a no-op, and `WeaviateClient.close` |
+
+Later sections that name `create_collection` or `validate_existing_collection` refer to the index-manager methods behind `create_index` and `validate_existing_schema`.
 
 The application layer (`VectorDBOperator`) touches only `VectorStorePort` and `VectorStoreFactory`. `metadata_fetcher.py` imports `resource_metadata` lazily inside the `weaviate` branch, so the `weaviate` package is never imported unless that provider is used. Nothing under `domain/` or `ports/` imports from `adapters/`.
 

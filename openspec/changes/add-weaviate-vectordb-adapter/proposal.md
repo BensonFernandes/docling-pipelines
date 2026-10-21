@@ -31,7 +31,10 @@ No **BREAKING** changes. Existing `opensearch` and `milvus` behavior, configurat
 
 ### New Capabilities
 
-- `backend/vectordb-operator`: Behavioral contract of the `vectordb` operator for the Weaviate provider: selecting and registering the provider, connection and configuration validation, collection creation and validation, sparse (BM25) retrieval mode, the deterministic-ID upsert and stale-chunk lifecycle, per-chunk failure reporting, and Weaviate flow-enrichment metadata. It also covers how OpenSearch-only options (ACL fields, schema templates) are handled, and records the operator's input-table and transform-metadata contract the provider relies on. The project has no existing VectorDB operator specification.
+The specs are split in two so that provider-agnostic behavior is written once and each provider adds only its own contract:
+
+- `backend/vectordb-operator`: the provider-agnostic contract of the `vectordb` operator: provider selection and rejection of unknown providers, the input-table contract, and the transform output and metadata contract. The project has no existing VectorDB operator specification. Future providers reuse this capability instead of restating it.
+- `backend/vectordb-weaviate`: the Weaviate provider contract: registration in operator metadata, connection and configuration validation, authentication, collection creation and validation, sparse (BM25) retrieval mode, the deterministic-ID upsert and stale-chunk lifecycle, per-chunk failure reporting, and Weaviate flow-enrichment metadata. It also covers how OpenSearch-only options (ACL fields, schema templates) are handled.
 
 ### Modified Capabilities
 

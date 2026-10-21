@@ -30,7 +30,16 @@
   4. drop any `allowed_users` mapping with one warning, and warn once if `allowed_users` is upstream but unmapped (design D13);
   5. run `validate_property_names` on the filtered mappings.
 
-  Pass the filtered mappings to the index manager and batch processor. Then implement `generate_chunk_pk` via `generate_positional_pk`, the detect-dimension delegations, `refresh_index` as a no-op, and `close`. Register `weaviate` lazily in `vectordb_operator.py`.
+  Pass the filtered mappings to the index manager and batch processor. Name the public methods after `VectorStorePort` and delegate as the Milvus adapter does (design D1, "Port-method delegation"):
+  - `create_index` → `index_manager.create_collection`;
+  - `validate_existing_schema` → `index_manager.validate_existing_collection`;
+  - `index_exists` → `index_manager.collection_exists`;
+  - `index_documents` → `batch_processor.create_batches` then `process_batches`;
+  - `delete_documents_by_ids`, `get_document_count`, `get_chunk_ids_for_documents`, `query_by_doc_names` → the `batch_processor` method of the same name;
+  - `detect_vector_dimension` and `detect_all_vector_dimensions` → the shared helpers of the same name in `docpipe/utils/operators/vectordb_utils.py`. `embeddings_column` is read from adapter config and defaults to `OperatorConstants.Columns.EMBEDDINGS_COLUMN_DEFAULT`; `detect_vector_dimension` uses it when `column_name` is `None`;
+  - `generate_chunk_pk` via `generate_positional_pk`, `refresh_index` as a no-op, and `close`.
+
+  Register `weaviate` lazily in `vectordb_operator.py`.
 
   Add `test_weaviate_adapter.py` covering:
   - `VectorStoreFactory.list_adapters()` includes `weaviate`, and `create("weaviate", ...)` works with the client patched;
@@ -40,13 +49,13 @@
   - a mapped `allowed_users` is absent from the created properties and from every `DataObject`, with one warning;
   - an unmapped upstream `allowed_users` emits one warning;
   - importing the adapter package in a subprocess loads no module under `docpipe.core.operators.acl` or `docpipe.api` (`sys.modules` check);
-  - positional primary key format, delegation, and `close`.
+  - positional primary key format, each delegation above (patched index manager, batch processor, and shared helpers called with the expected arguments), the `embeddings_column` fallback, and `close`.
 
   Verify with pytest.
 - [ ] 5.2 [backend] Add Weaviate to `VectorDBOperator._get_vectordb_provider_schemas()`. Update the three hardcoded provider strings in `src/docpipe/core/operators/vectordb/vectordb_operator.py`:
-  - the class docstring's "It delegates to provider-specific adapters (OpenSearch, Milvus)" and "Supported Vector Databases" list (currently lines 60 and 63-64);
-  - the `get_metadata()` description "Supports OpenSearch and Milvus through adapters." (currently line 1002);
-  - the `provider` attribute description "Supported values: opensearch, milvus." (currently line 1040).
+  - the class docstring's "It delegates to provider-specific adapters (OpenSearch, Milvus)" and "Supported Vector Databases" list;
+  - the `get_metadata()` description "Supports OpenSearch and Milvus through adapters.";
+  - the `provider` attribute description "Supported values: opensearch, milvus.".
 
   `VALID_VALUES` comes from `VectorStoreFactory.list_adapters()` and needs no edit. Extend `tests/unit/operators/vectordb/test_vectordb_operator.py` with: `get_metadata()` `provider` valid values include `weaviate`; the operator description and `provider` description both mention Weaviate; `provider_config.providers.weaviate` exposes the `index_type`/`distance_metric` enums and `collection_name`; a mocked adapter returning one failed item causes its parent document to appear in `failed_docs` with reason "One or more chunks failed to index"; and an adapter exception during transform still calls `close`. Verify `pytest tests/unit/operators/vectordb/` passes.
 - [ ] 5.3 [backend] Add `sample_flows/vectordb/weaviate_integration.json` (ingest → extract → chunk → embeddings → vectordb with `provider: "weaviate"`, self-hosted `localhost:8080`/`50051`, `distance_metric: "cosine"`, and feature mappings including `content → text`, modeled on `milvus_integration.json`). Verify it parses as JSON and that `docling-pipelines --flow-file sample_flows/vectordb/weaviate_integration.json --validate` passes with the local Weaviate from task 7.1 running.
@@ -58,11 +67,17 @@
   - Troubleshooting covers the gRPC port 50051 being unreachable, collection-name capitalization, reserved property names, dimension mismatch, `QUERY_MAXIMUM_RESULTS` for files with more than 10,000 chunks, server `DEFAULT_QUANTIZATION`, sparse mode failing because content is unmapped or not searchable, ACL not supported (a mapped `allowed_users` is dropped with a warning; ACL-enforced reads are OpenSearch-only), and `schema_template_path` being ignored as OpenSearch-only;
   - the minimum supported Weaviate server version for client 4.23.1, taken from its release notes.
 
-  Then update the `docs/reference/OPERATORS.md` VectorDB section (provider list, config example, field list) without duplicating the README. Update the provider enumerations that list vector databases: `README.md` (lines 16, 26, 134), `ARCHITECTURE.md` (lines 33, 62, 4577), `USER_GUIDE_PIPELINE_SETUP.md` (line 913), `docs/README.md` (line 53), and `sample_flows/README.md` (the flow table and the `// Options: opensearch, milvus` comment). Check `AGENTS.md` and `docs/guides/SLIM_VARIANT.md` too, and edit them only if they enumerate vector databases. Verify that every relative link resolves, that code fences carry language tags, and that the README's JSON examples pass `WeaviateConfig.model_validate`. Do not edit `CHANGELOG.md`.
+  Then update the `docs/reference/OPERATORS.md` VectorDB section (provider list, config example, field list) without duplicating the README. Update the provider enumerations that list vector databases: `README.md`, `ARCHITECTURE.md`, `USER_GUIDE_PIPELINE_SETUP.md`, `docs/README.md`, and `sample_flows/README.md` (the flow table and the `// Options: opensearch, milvus` comment). Check `AGENTS.md` and `docs/guides/SLIM_VARIANT.md` too, and edit them only if they enumerate vector databases. Verify that every relative link resolves, that code fences carry language tags, and that the README's JSON examples pass `WeaviateConfig.model_validate`. Do not edit `CHANGELOG.md`.
 
 ## 6. Flow enrichment
 
-- [ ] 6.1 [backend] Implement `resource_metadata.py` (`WeaviateResourceMetadata.fetch`) per design D10 and add the `weaviate` branch to `VectorDBMetadataFetcher.fetch_metadata`. Add `test_weaviate_resource_metadata.py` covering: the five-key result for an existing collection (schema entries, sampled dimension, distance); a new name → supported with default mappings (and, with `add_sparse_vector`, `content → text` and `sparse_embeddings → sparse_embeddings`); no named vectors → unsupported with a reason when sparse is off, but supported with null similarity and dimension when sparse is on and content is searchable; `index_searchable` present on property entries; mapping resolution order (saved → live schema → defaults); no host/cluster URL → empty without connecting; connection error → empty; and client closed in every path. Extend `test_metadata_fetcher.py` with the router dispatch. Verify with pytest.
+- [ ] 6.1 [backend] Implement `resource_metadata.py` (`WeaviateResourceMetadata.fetch`) per design D10 and add the `weaviate` branch to `VectorDBMetadataFetcher.fetch_metadata`. Because Weaviate now shares the sparse rule, update the stale "Milvus only" wording so it reads "Milvus and Weaviate":
+  - in `metadata_fetcher.py`, the `compute_default_feature_mappings` docstring (rule 5, "[Milvus, add_sparse_vector=True only]"), the `add_sparse_vector` argument description ("When True (Milvus only)"), and the inline "Rule 5 — Milvus sparse path" comment;
+  - in `vectordb_operator.py`, the "Add sparse vector configuration if present (Milvus-specific)" comment where `add_sparse_vector` is copied into `adapter_config`.
+
+  Verify with `grep -rn "Milvus only\|Milvus-specific\|Milvus sparse path" src/docpipe/core/operators/vectordb/` that no stale occurrence remains, and that the OpenSearch-only schema-template wording is untouched.
+
+  Add `test_weaviate_resource_metadata.py` covering: the five-key result for an existing collection (schema entries, sampled dimension, distance); a new name → supported with default mappings (and, with `add_sparse_vector`, `content → text` and `sparse_embeddings → sparse_embeddings`); no named vectors → unsupported with a reason when sparse is off, but supported with null similarity and dimension when sparse is on and content is searchable; `index_searchable` present on property entries; mapping resolution order (saved → live schema → defaults); no host/cluster URL → empty without connecting; connection error → empty; and client closed in every path. Extend `test_metadata_fetcher.py` with the router dispatch. Verify with pytest.
 
 ## 7. Real-server integration suite
 
@@ -78,4 +93,4 @@
 ## Workflow follow-up
 
 - Open the PR per `.bob/rules/github-pr.md` (body from template, pre-commit output pasted, `--body-file`).
-- After review and merge readiness, run `openspec archive add-weaviate-vectordb-adapter` and confirm `openspec/specs/backend/vectordb-operator/spec.md` is created.
+- After review and merge readiness, run `openspec archive add-weaviate-vectordb-adapter` and confirm `openspec/specs/backend/vectordb-operator/spec.md` and `openspec/specs/backend/vectordb-weaviate/spec.md` are created.
