@@ -133,7 +133,7 @@ class TestValidate:
             "docpipe.core.operators.quality.classification.document_classifier.ClassificationAdapterFactory"
         ) as mock_factory:
             mock_factory.create_adapter.return_value = mock_adapter
-            mock_factory.get_supported_providers.return_value = {"litellm", "watsonx", "standard"}
+            mock_factory.get_supported_providers.return_value = {"litellm", "watsonx"}
             op = DocumentClassifierOperator(config=_LITELLM_CONFIG)
 
             errors: list[str] = []
@@ -142,6 +142,27 @@ class TestValidate:
 
         provider_errors = [e for e in errors if "provider" in e.lower() and "litellm" in e.lower()]
         assert provider_errors == [], "validate() should not flag 'litellm' as invalid provider"
+
+
+class TestValidateProviderMessages:
+    def test_deprecated_ollama_reports_migration_message(self) -> None:
+        op = DocumentClassifierOperator(_LITELLM_CONFIG, classification_adapter=MagicMock(spec=ClassificationPort))
+        op.provider = "ollama"
+        errors: list[str] = []
+        op.validate(errors, [], ["content", "id", "name"])
+        assert any("Ollama provider is no longer supported" in e for e in errors)
+
+    def test_unknown_provider_reports_supported_list(self) -> None:
+        op = DocumentClassifierOperator(_LITELLM_CONFIG, classification_adapter=MagicMock(spec=ClassificationPort))
+        op.provider = "bogus"
+        errors: list[str] = []
+        op.validate(errors, [], ["content", "id", "name"])
+        assert any("provider must be one of" in e for e in errors)
+
+    def test_provider_config_is_not_flagged_required(self) -> None:
+        """watsonx may omit provider_config (WATSONX_* env vars); the adapter enforces the litellm rule."""
+        attributes = DocumentClassifierOperator.get_metadata()["attributes"]
+        assert attributes["provider_config"]["required"] is False
 
 
 # ---------------------------------------------------------------------------
@@ -176,7 +197,6 @@ class _FakeAdapter(ClassificationPort):
     ADAPTER_DISPLAY_NAME = "Fake"
 
     def __init__(self) -> None:
-        super().__init__(config={})
         self.received_types: Any = None
 
     @classmethod
@@ -263,3 +283,12 @@ class TestClassificationAdapterInjection:
         out, _ = op.transform(table)
         assert out[0]["document_type"].to_pylist() == ["Pay Stub"]
         assert adapter.received_types == {"Pay Stub": "A pay stub"}
+
+    def test_document_types_resolved_once_for_whole_batch(self) -> None:
+        provider = _FakeProvider({"Pay Stub": "A pay stub"})
+        op = DocumentClassifierOperator(
+            _CONFIG_NO_TYPES, document_class_provider=provider, classification_adapter=_FakeAdapter()
+        )
+        table = pa.table({"id": ["1", "2", "3"], "name": ["a.pdf", "b.pdf", "c.pdf"], "content": ["x", "y", "z"]})
+        op.transform(table)
+        assert provider.calls == 1
