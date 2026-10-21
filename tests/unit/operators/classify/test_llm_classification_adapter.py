@@ -1,19 +1,20 @@
 #!/usr/bin/env python3
-"""Unit tests for _LLMClassificationService (injected-adapter path).
+"""Unit tests for _LLMClassificationService and StandardLLMClassificationAdapter.from_config.
 
-The factory-path (provider_name + model_id) has moved to
-ClassificationAdapterFactory.  These tests cover the service when a pre-built
-LLMInferencePort is injected directly, which is the only construction path
-that _LLMClassificationService now supports.
+_LLMClassificationService is constructed with a pre-built LLMInferencePort;
+provider validation and adapter construction live in
+StandardLLMClassificationAdapter.from_config.
 """
 
 import json
-from unittest.mock import Mock
+from unittest.mock import Mock, patch
 
 import pytest
 
+from docpipe.core.adapters.llm_adapter_factory import LLMAdapterFactory
 from docpipe.core.constants.constants import LLMConstants
 from docpipe.core.operators.quality.classification.adapters.outbound.standard_llm_adapter import (
+    StandardLLMClassificationAdapter,
     _LLMClassificationService,
 )
 from docpipe.core.operators.quality.classification.domain.models import ClassificationRequest
@@ -61,17 +62,6 @@ class TestLLMClassificationServiceInjectedAdapter:
         with pytest.raises(DocpipeException, match="validation failed"):
             _LLMClassificationService(llm_adapter=adapter)
 
-    def test_injected_adapter_bypasses_factory(self) -> None:
-        """_LLMClassificationService no longer imports LLMAdapterFactory at all;
-        it relies entirely on the pre-built adapter passed in."""
-        adapter = _make_valid_llm_adapter()
-        # If service were to call LLMAdapterFactory, the adapter's validate would
-        # not be the only call.  We verify the injected adapter is used directly.
-        service = _LLMClassificationService(llm_adapter=adapter)
-        # validate() called once during __init__ — no extra calls mean no factory was invoked
-        adapter.validate.assert_called_once()
-        assert service.llm_adapter is adapter
-
     def test_classify_document_success(self) -> None:
         response_json = json.dumps({"document_type": "invoice", "confidence": 9, "reasoning": "Has line items"})
         adapter = _make_valid_llm_adapter(response_json)
@@ -117,6 +107,27 @@ class TestLLMClassificationServiceInjectedAdapter:
         assert response.document_type == "report"
         assert response.confidence == 7
 
+    def test_label_resolved_to_configured_spelling(self) -> None:
+        response_json = json.dumps({"document_type": "purchase_order", "confidence": 9, "reasoning": "r"})
+        service = _LLMClassificationService(llm_adapter=_make_valid_llm_adapter(response_json))
+
+        request = ClassificationRequest(content="PO", document_types={"Purchase Order": "A PO"})
+        response = service.classify_document(request=request)
+
+        assert response.success is True
+        assert response.document_type == "Purchase Order"
+
+    def test_label_not_in_document_types_yields_none_with_reasoning(self) -> None:
+        response_json = json.dumps({"document_type": "memo", "confidence": 9, "reasoning": "r"})
+        service = _LLMClassificationService(llm_adapter=_make_valid_llm_adapter(response_json))
+
+        request = ClassificationRequest(content="Memo", document_types=["invoice", "receipt"])
+        response = service.classify_document(request=request)
+
+        assert response.success is True
+        assert response.document_type is None
+        assert "memo" in response.reasoning
+
     def test_get_model_info(self) -> None:
         adapter = _make_valid_llm_adapter()
         service = _LLMClassificationService(
@@ -132,10 +143,32 @@ class TestLLMClassificationServiceInjectedAdapter:
         assert info["temperature"] == 0.3
         assert info["max_tokens"] == 800
 
-    def test_cleanup_does_not_raise(self) -> None:
-        adapter = _make_valid_llm_adapter()
-        service = _LLMClassificationService(llm_adapter=adapter)
-        service.cleanup()  # must not raise
+
+@pytest.mark.unit
+class TestStandardAdapterFromConfigProviderConfig:
+    """provider_config is required for litellm but optional for watsonx (env-var credentials)."""
+
+    def test_watsonx_with_empty_provider_config_does_not_raise(self) -> None:
+        llm_adapter = _make_valid_llm_adapter()
+        config = {"provider": "watsonx", "provider_config": {}}
+        with patch.object(LLMAdapterFactory, "create_inference_adapter", return_value=llm_adapter) as mock_create:
+            adapter = StandardLLMClassificationAdapter.from_config(config)
+        assert isinstance(adapter, StandardLLMClassificationAdapter)
+        assert mock_create.call_args.kwargs["provider"] == "watsonx"
+
+    def test_watsonx_with_absent_provider_config_does_not_raise(self) -> None:
+        llm_adapter = _make_valid_llm_adapter()
+        with patch.object(LLMAdapterFactory, "create_inference_adapter", return_value=llm_adapter):
+            adapter = StandardLLMClassificationAdapter.from_config({"provider": "watsonx"})
+        assert isinstance(adapter, StandardLLMClassificationAdapter)
+
+    def test_litellm_with_empty_provider_config_raises(self) -> None:
+        with pytest.raises(ValueError, match="provider_config is required"):
+            StandardLLMClassificationAdapter.from_config({"provider": "litellm", "provider_config": {}})
+
+    def test_litellm_with_absent_provider_config_raises(self) -> None:
+        with pytest.raises(ValueError, match="provider_config is required"):
+            StandardLLMClassificationAdapter.from_config({"provider": "litellm"})
 
 
 if __name__ == "__main__":

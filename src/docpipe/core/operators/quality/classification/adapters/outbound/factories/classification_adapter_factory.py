@@ -28,22 +28,23 @@ class ClassificationAdapterFactory:
 
     Registry
     --------
-    Adapters self-register by calling :meth:`register` at the bottom of their
-    module (same pattern as ``DOCPIPE_OPERATORS`` in the operator registry).
+    Adapters self-register via the ``@register_classification_adapter``
+    decorator (same pattern as ``@register_entity_extraction_adapter``).
     The key is each adapter's ``ADAPTER_NAME`` class attribute.
 
     Aliases
     -------
-    ``_PROVIDER_ALIASES`` maps flow-JSON provider strings that are *not* an
-    ``ADAPTER_NAME`` to the ``ADAPTER_NAME`` they should resolve to.  For
-    example ``"litellm"`` and ``"watsonx"`` both resolve to ``"standard"``.
+    ``_PROVIDER_ALIASES`` is the only list of valid flow-JSON provider strings.
+    Each maps to the ``ADAPTER_NAME`` it resolves to.  For example ``"litellm"``
+    and ``"watsonx"`` both resolve to ``"standard"``.  ``ADAPTER_NAME`` is an
+    internal registry key and is not itself a valid provider string.
     """
 
     # Registry: ADAPTER_NAME → adapter class
     _REGISTRY: ClassVar[dict[str, type[ClassificationPort]]] = {}
 
     # Alias table: flow-JSON provider string → ADAPTER_NAME
-    # Add a new entry here when a new adapter accepts multiple provider strings.
+    # Add an entry here for every provider string a new adapter accepts.
     _PROVIDER_ALIASES: ClassVar[dict[str, str]] = {
         "litellm": "standard",
         "watsonx": "standard",
@@ -53,7 +54,7 @@ class ClassificationAdapterFactory:
     def register(cls, adapter_class: type[ClassificationPort]) -> None:
         """Register *adapter_class* under its ``ADAPTER_NAME``.
 
-        Call this once at module level after defining a new adapter class.
+        Normally invoked through the ``@register_classification_adapter`` decorator.
 
         Args:
             adapter_class: A concrete subclass of :class:`ClassificationPort`
@@ -91,9 +92,9 @@ class ClassificationAdapterFactory:
         logger.debug("ClassificationAdapterFactory: resolving provider=%s", normalised)
 
         # Resolve alias → canonical ADAPTER_NAME.
-        resolved = cls._PROVIDER_ALIASES.get(normalised, normalised)
+        resolved = cls._PROVIDER_ALIASES.get(normalised)
 
-        adapter_class = cls._REGISTRY.get(resolved)
+        adapter_class = cls._REGISTRY.get(resolved) if resolved is not None else None
         if adapter_class is None:
             supported = sorted(cls.get_supported_providers())
             raise ValueError(f"Unknown classification provider: {provider!r}. Supported values: {supported}")
@@ -106,26 +107,38 @@ class ClassificationAdapterFactory:
         return adapter_class.from_config(config)
 
     @classmethod
+    def get_deprecation_message(cls, provider: str) -> str | None:
+        """Return the migration message for a deprecated *provider*, or ``None`` if it is not deprecated."""
+        return cls._DEPRECATED.get(provider.lower())
+
+    @classmethod
     def get_supported_providers(cls) -> set[str]:
-        """Return all valid provider strings (registered names + aliases).
+        """Return all valid provider strings (the alias table keys).
 
         Deprecated providers are excluded.
 
         Returns:
             Set of valid provider name strings accepted by :meth:`create_adapter`.
         """
-        return set(cls._REGISTRY) | set(cls._PROVIDER_ALIASES)
+        return set(cls._PROVIDER_ALIASES)
 
 
-# ---------------------------------------------------------------------------
-# Built-in adapter registrations
-# ---------------------------------------------------------------------------
-# Import here (bottom of file) to avoid circular imports.  Each adapter is
-# registered under its ADAPTER_NAME.  External adapters call register() from
-# their own module after definition.
+def register_classification_adapter(adapter_class: type[ClassificationPort]) -> type[ClassificationPort]:
+    """Decorator to register a classification adapter with ``ClassificationAdapterFactory``.
 
-from docpipe.core.operators.quality.classification.adapters.outbound.standard_llm_adapter import (  # noqa: E402
-    StandardLLMClassificationAdapter,
-)
+    Args:
+        adapter_class: Concrete subclass of :class:`ClassificationPort`.
 
-ClassificationAdapterFactory.register(StandardLLMClassificationAdapter)
+    Returns:
+        The adapter class (unchanged).
+
+    Example::
+
+        @register_classification_adapter
+        class MyAdapter(ClassificationPort):
+            ADAPTER_NAME = "my_adapter"
+            ADAPTER_DISPLAY_NAME = "My Adapter"
+            ...
+    """
+    ClassificationAdapterFactory.register(adapter_class)
+    return adapter_class

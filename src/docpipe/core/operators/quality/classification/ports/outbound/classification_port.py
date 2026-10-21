@@ -3,7 +3,6 @@
 from abc import ABC, abstractmethod
 from typing import Any, Self
 
-from docpipe.core.constants.operator_constants import OperatorConstants
 from docpipe.core.operators.quality.classification.domain.models import ClassificationResponse
 
 
@@ -18,30 +17,16 @@ class ClassificationPort(ABC):
             (e.g. ``"standard"``).  The factory's ``register()`` call uses this
             value as the registry key.
         ADAPTER_DISPLAY_NAME: Human-readable label for logs and UI.
+
+    The port defines the contract only.  Each adapter parses the config values
+    it needs (e.g. ``confidence_threshold``) in its own ``from_config`` /
+    constructor.  Document types are supplied per call to
+    :meth:`classify_document`, so adapters never depend on where the classes
+    came from.
     """
 
     ADAPTER_NAME: str
     ADAPTER_DISPLAY_NAME: str
-
-    def __init__(self, *, config: dict[str, Any]) -> None:
-        """Store common classification tuning values from the operator config dict.
-
-        Document types are intentionally *not* read here: they are supplied
-        per call to :meth:`classify_document` so adapters never depend on where
-        the classes came from.
-
-        Args:
-            config: Full operator config dictionary.
-        """
-        self.config = config
-        self.confidence_threshold: float = config.get(
-            OperatorConstants.Config.CONFIDENCE_THRESHOLD,
-            OperatorConstants.Classification.DEFAULT_CONFIDENCE_THRESHOLD,
-        )
-        self.max_content_length: int = config.get(
-            OperatorConstants.Config.MAX_CONTENT_LENGTH,
-            OperatorConstants.Classification.DEFAULT_MAX_CONTENT_LENGTH,
-        )
 
     @classmethod
     @abstractmethod
