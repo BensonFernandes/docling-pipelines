@@ -107,6 +107,27 @@ class TestLLMClassificationServiceInjectedAdapter:
         assert response.document_type == "report"
         assert response.confidence == 7
 
+    def test_label_resolved_to_configured_spelling(self) -> None:
+        response_json = json.dumps({"document_type": "purchase_order", "confidence": 9, "reasoning": "r"})
+        service = _LLMClassificationService(llm_adapter=_make_valid_llm_adapter(response_json))
+
+        request = ClassificationRequest(content="PO", document_types={"Purchase Order": "A PO"})
+        response = service.classify_document(request=request)
+
+        assert response.success is True
+        assert response.document_type == "Purchase Order"
+
+    def test_label_not_in_document_types_yields_none_with_reasoning(self) -> None:
+        response_json = json.dumps({"document_type": "memo", "confidence": 9, "reasoning": "r"})
+        service = _LLMClassificationService(llm_adapter=_make_valid_llm_adapter(response_json))
+
+        request = ClassificationRequest(content="Memo", document_types=["invoice", "receipt"])
+        response = service.classify_document(request=request)
+
+        assert response.success is True
+        assert response.document_type is None
+        assert "memo" in response.reasoning
+
     def test_get_model_info(self) -> None:
         adapter = _make_valid_llm_adapter()
         service = _LLMClassificationService(

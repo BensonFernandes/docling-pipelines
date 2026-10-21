@@ -303,6 +303,14 @@ never sees mixed content.
 - Better handling of ambiguous documents
 - Improved confidence scores
 
+### Label matching
+
+The label returned by the model is matched against your document types ignoring case, spaces and
+underscores, and the output column holds the type exactly as you spelled it. For example, with a
+type named `"Purchase Order"`, a model answer of `purchase_order` is written as `"Purchase Order"`.
+If the label matches none of the configured types, the output is `None` and the reasoning column
+explains which label was rejected.
+
 ---
 
 ## Input Requirements
@@ -583,7 +591,8 @@ The operator provides detailed processing statistics in metadata:
 **Cause**: Missing or invalid provider configuration
 
 **Solution**:
-- Verify provider name is correct (`litellm`, `watsonx`)
+- Verify provider name is correct (`litellm`, `watsonx`); any other value fails at construction with the list of supported providers
+- `provider_config` is required for `litellm`; for `watsonx` it may be omitted when the `WATSONX_*` environment variables are set
 - Check all required provider_config parameters
 - Ensure API keys and endpoints are valid
 - For LiteLLM, verify model ID format matches provider (e.g., `openai/gpt-4o-mini`, `anthropic/claude-3-sonnet-20240229`)
@@ -687,7 +696,7 @@ class ClassificationRequest:
 
 @dataclass
 class ClassificationResponse:
-    document_type: str
+    document_type: str | None  # None when the returned label is not a configured type
     confidence: float
     reasoning: str
     success: bool
@@ -702,6 +711,10 @@ class ModelInfo:
     supports_json_mode: bool = True
     max_tokens: int = 4096
 ```
+
+The module `domain/models.py` also exposes the reusable pure functions `build_classification_prompt()`,
+`parse_classification_response()` (raw LLM text to `ClassificationResponse`: JSON parse, required-field
+check, confidence clamp) and `resolve_document_type()` (maps a returned label onto the configured types).
 
 ---
 
@@ -720,7 +733,9 @@ class ModelInfo:
   - Operator depends only on `ClassificationPort`; adapters are resolved by `ClassificationAdapterFactory`
   - Built-in `StandardLLMClassificationAdapter` serves the `litellm` and `watsonx` providers
   - Adapters self-register via `@register_classification_adapter`
-  - `provider_config` is required for `litellm` and optional for `watsonx` (environment-variable credentials)
+  - `provider_config` is required for `litellm` and optional for `watsonx` (environment-variable credentials); its metadata flag is `required: false` and the adapter enforces the `litellm` rule
+  - Unsupported providers raise at construction instead of silently falling back to `litellm`
+  - The returned label is resolved against `document_types`; unmatched labels yield `None`
 - **v2.1.0** : Dependency injection and pluggable document class provider
   - The classifier accepts an optional pre-built `LLMInferencePort`, bypassing `LLMAdapterFactory`
   - Added `DocumentClassProvider` port; default `StaticDocumentClassProvider` preserves existing local-file behaviour

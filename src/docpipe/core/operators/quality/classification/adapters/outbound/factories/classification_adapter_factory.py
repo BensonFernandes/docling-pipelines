@@ -119,6 +119,11 @@ class ClassificationAdapterFactory:
         return adapter_class.from_config(config)
 
     @classmethod
+    def get_deprecation_message(cls, provider: str) -> str | None:
+        """Return the migration message for a deprecated *provider*, or ``None`` if it is not deprecated."""
+        return cls._DEPRECATED.get(provider.lower())
+
+    @classmethod
     def get_supported_providers(cls) -> set[str]:
         """Return all valid provider strings (registered names + aliases).
 

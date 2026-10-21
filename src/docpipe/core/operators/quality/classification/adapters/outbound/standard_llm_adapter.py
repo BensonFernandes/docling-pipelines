@@ -24,13 +24,14 @@ from docpipe.core.operators.quality.classification.domain.models import (
     ClassificationRequest,
     ClassificationResponse,
     build_classification_prompt,
+    parse_classification_response,
+    resolve_document_type,
 )
 from docpipe.core.operators.quality.classification.ports.outbound.classification_port import ClassificationPort
 from docpipe.core.ports.llm_inference_port import LLMInferencePort
 from docpipe.exceptions.docpipe_exceptions import DocpipeException
 from docpipe.exceptions.error_codes import ErrorCode
 from docpipe.utils.infrastructure.logging import get_logger
-from docpipe.utils.llm.json_parser import parse_llm_json_response
 
 logger = get_logger()
 
@@ -140,51 +141,29 @@ class _LLMClassificationService:
                 "_LLMClassificationService: received response (len=%s)", len(result_text) if result_text else 0
             )
 
-            if not result_text or result_text.strip() == "":
-                raise ValueError("Empty response from LLM chat API")
-
-            try:
-                result = parse_llm_json_response(result_text, log_on_error=True)
-            except DocpipeException as exc:
-                raise ValueError(f"Invalid JSON response from LLM: {exc}") from exc
-
-            if (
-                OperatorConstants.Classification.FIELD_DOCUMENT_TYPE not in result
-                or OperatorConstants.Classification.FIELD_CONFIDENCE not in result
-            ):
-                raise ValueError("Invalid response format from LLM - missing required fields")
-
-            if (
-                result[OperatorConstants.Classification.FIELD_DOCUMENT_TYPE] is None
-                or result[OperatorConstants.Classification.FIELD_CONFIDENCE] is None
-            ):
-                raise ValueError("Invalid response format from LLM - null values in required fields")
-
-            result[OperatorConstants.Classification.FIELD_DOCUMENT_TYPE] = (
-                result[OperatorConstants.Classification.FIELD_DOCUMENT_TYPE].lower().replace(" ", "_")
+            parsed = parse_classification_response(response_text=result_text)
+            resolved_type = resolve_document_type(
+                label=parsed.document_type or "", document_types=request.document_types
             )
-
-            try:
-                confidence_value = float(result[OperatorConstants.Classification.FIELD_CONFIDENCE])
-                result[OperatorConstants.Classification.FIELD_CONFIDENCE] = max(1, min(10, int(confidence_value)))
-            except (ValueError, TypeError) as exc:
-                raise ValueError(
-                    f"Invalid confidence value: {result[OperatorConstants.Classification.FIELD_CONFIDENCE]}"
-                ) from exc
 
             logger.debug(
-                "_LLMClassificationService: parsed result - type=%s confidence=%s",
-                result[OperatorConstants.Classification.FIELD_DOCUMENT_TYPE],
-                result[OperatorConstants.Classification.FIELD_CONFIDENCE],
+                "_LLMClassificationService: parsed result - label=%s resolved=%s confidence=%s",
+                parsed.document_type,
+                resolved_type,
+                parsed.confidence,
             )
 
-            return ClassificationResponse(
-                document_type=result[OperatorConstants.Classification.FIELD_DOCUMENT_TYPE],
-                confidence=result[OperatorConstants.Classification.FIELD_CONFIDENCE],
-                reasoning=result.get(OperatorConstants.Classification.FIELD_REASONING, ""),
-                success=True,
-                error=None,
-            )
+            if resolved_type is None:
+                logger.warning(
+                    "_LLMClassificationService: LLM returned label %r that is not a configured document type",
+                    parsed.document_type,
+                )
+                return replace(
+                    parsed,
+                    document_type=None,
+                    reasoning=f"Returned label {parsed.document_type!r} is not a configured document type",
+                )
+            return replace(parsed, document_type=resolved_type)
 
         except ValueError as exc:
             logger.error("_LLMClassificationService: failed to parse LLM response: %s", exc)
@@ -236,10 +215,6 @@ class StandardLLMClassificationAdapter(ClassificationPort):
     ADAPTER_NAME = "standard"
     ADAPTER_DISPLAY_NAME = "Standard LLM Classifier"
 
-    # Provider strings that map to this adapter via the factory alias table.
-    # Listed here so tests and docs have a single source of truth.
-    PROVIDER_ALIASES: frozenset[str] = frozenset({"litellm", "watsonx"})
-
     def __init__(self, *, llm_adapter: LLMInferencePort, config: dict[str, Any]) -> None:
         """Build the adapter with a pre-built LLM port.
 
@@ -249,13 +224,10 @@ class StandardLLMClassificationAdapter(ClassificationPort):
         Args:
             llm_adapter: Pre-built and validated :class:`LLMInferencePort`.
             config: Full operator config dictionary (used for
-                confidence_threshold, max_content_length, temperature, max_tokens).
+                max_content_length, temperature, max_tokens).  The confidence
+                threshold is enforced by the operator, not by this adapter.
         """
         self.config = config
-        self.confidence_threshold: float = config.get(
-            OperatorConstants.Config.CONFIDENCE_THRESHOLD,
-            OperatorConstants.Classification.DEFAULT_CONFIDENCE_THRESHOLD,
-        )
         self.max_content_length: int = config.get(
             OperatorConstants.Config.MAX_CONTENT_LENGTH,
             OperatorConstants.Classification.DEFAULT_MAX_CONTENT_LENGTH,
@@ -292,8 +264,8 @@ class StandardLLMClassificationAdapter(ClassificationPort):
         Args:
             config: Full operator config dictionary.  Must contain:
 
-                * ``provider`` — one of ``"litellm"`` or ``"watsonx"`` (or the
-                  ``"standard"`` alias).
+                * ``provider`` — one of ``"litellm"`` or ``"watsonx"``; the
+                  ``"standard"`` adapter name selects the default provider.
                 * ``provider_config`` — dict with optional model_id and connection parameters.
                   Required for ``litellm``; optional for ``watsonx``, which falls
                   back to the ``WATSONX_*`` environment variables.
@@ -302,19 +274,27 @@ class StandardLLMClassificationAdapter(ClassificationPort):
             A ready :class:`StandardLLMClassificationAdapter` instance.
 
         Raises:
+            ValueError: When ``provider`` is not supported by
+                :class:`~docpipe.core.adapters.llm_adapter_factory.LLMAdapterFactory`.
             ValueError: When ``provider_config`` is absent for a provider that requires it (``litellm``).
             ValueError: When :class:`~docpipe.core.adapters.llm_adapter_factory.LLMAdapterFactory`
                 fails to build the inference adapter.
         """
         provider_config: dict[str, Any] = config.get(OperatorConstants.Config.PROVIDER_CONFIG) or {}
 
-        # Normalise provider - "standard" alias falls back to the default provider.
-        raw_provider: str = config.get(OperatorConstants.Config.PROVIDER, "").lower()
+        # A missing provider or the adapter's own name ("standard") selects the default provider.
+        raw_provider: str = (
+            config.get(OperatorConstants.Config.PROVIDER) or OperatorConstants.Classification.DEFAULT_PROVIDER
+        ).lower()
         llm_provider = (
-            raw_provider
-            if raw_provider in LLMAdapterFactory.get_supported_providers(capability="inference")
-            else OperatorConstants.Classification.DEFAULT_PROVIDER
+            OperatorConstants.Classification.DEFAULT_PROVIDER if raw_provider == cls.ADAPTER_NAME else raw_provider
         )
+        supported_providers = LLMAdapterFactory.get_supported_providers(capability="inference")
+        if llm_provider not in supported_providers:
+            raise ValueError(
+                f"Unsupported provider '{raw_provider}' for StandardLLMClassificationAdapter. "
+                f"Supported providers: {sorted(supported_providers)}"
+            )
 
         # watsonx may rely on WATSONX_* environment variables, so an empty provider_config is valid there.
         if llm_provider == OperatorConstants.Classification.PROVIDER_LITELLM and not provider_config:
@@ -443,7 +423,6 @@ class StandardLLMClassificationAdapter(ClassificationPort):
             content=content,
             document_types=document_types,
             max_content_length=self.max_content_length,
-            confidence_threshold=self.confidence_threshold,
         )
         logger.debug(
             "StandardLLMAdapter: invoking _LLMClassificationService for %s (content_len=%s, types=%s)",

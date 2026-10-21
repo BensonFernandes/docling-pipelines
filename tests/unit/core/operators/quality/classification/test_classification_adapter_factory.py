@@ -164,3 +164,13 @@ class TestFromConfigDelegation:
         with patch.object(StandardLLMClassificationAdapter, "from_config", side_effect=ValueError("bad config")):
             with pytest.raises(ValueError, match="bad config"):
                 ClassificationAdapterFactory.create_adapter(provider="litellm", config=_LITELLM_CONFIG)
+
+
+class TestDeprecationMessage:
+    def test_returns_message_for_deprecated_provider(self) -> None:
+        message = ClassificationAdapterFactory.get_deprecation_message("Ollama")
+        assert message is not None
+        assert "litellm" in message
+
+    def test_returns_none_for_supported_provider(self) -> None:
+        assert ClassificationAdapterFactory.get_deprecation_message("litellm") is None

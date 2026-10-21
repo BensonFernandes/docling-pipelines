@@ -66,19 +66,19 @@ class TestStandardLLMClassificationAdapterInit:
     def test_adapter_name(self) -> None:
         assert StandardLLMClassificationAdapter.ADAPTER_NAME == "standard"
 
-    def test_provider_aliases(self) -> None:
-        """PROVIDER_ALIASES declares the flow-JSON strings that resolve here."""
-        assert "litellm" in StandardLLMClassificationAdapter.PROVIDER_ALIASES
-        assert "watsonx" in StandardLLMClassificationAdapter.PROVIDER_ALIASES
+    def test_has_no_provider_aliases_copy(self) -> None:
+        """The factory's _PROVIDER_ALIASES is the single source of truth."""
+        assert not hasattr(StandardLLMClassificationAdapter, "PROVIDER_ALIASES")
 
     def test_does_not_read_document_types_from_config(self) -> None:
         """Document types are a per-call argument, never read from config."""
         adapter = _make_adapter()
         assert not hasattr(adapter, "document_types")
 
-    def test_stores_confidence_threshold(self) -> None:
+    def test_does_not_hold_confidence_threshold(self) -> None:
+        """The operator is the only place the confidence threshold is enforced."""
         adapter = _make_adapter()
-        assert adapter.confidence_threshold == 7.0
+        assert not hasattr(adapter, "confidence_threshold")
 
     def test_stores_max_content_length_default(self) -> None:
         adapter = _make_adapter()
@@ -144,8 +144,8 @@ class TestFromConfig:
             provider_config=_BASE_CONFIG["provider_config"],
         )
 
-    def test_standard_alias_falls_back_to_litellm(self) -> None:
-        """The 'standard' alias resolves to the DEFAULT_PROVIDER (litellm)."""
+    def test_standard_adapter_name_selects_default_provider(self) -> None:
+        """The 'standard' adapter name resolves to the DEFAULT_PROVIDER (litellm)."""
         config = {**_BASE_CONFIG, "provider": "standard"}
         mock_llm = _make_mock_llm_adapter()
         with (
@@ -157,13 +157,20 @@ class TestFromConfig:
             ),
         ):
             mock_factory_cls.create_inference_adapter.return_value = mock_llm
-            # "standard" is NOT in INFERENCE_PROVIDERS, so fallback kicks in
             mock_factory_cls.get_supported_providers.return_value = {"litellm", "watsonx"}
             StandardLLMClassificationAdapter.from_config(config)
 
         call_kwargs = mock_factory_cls.create_inference_adapter.call_args.kwargs
-        # Must NOT forward "standard" to LLMAdapterFactory — uses default provider
-        assert call_kwargs["provider"] != "standard"
+        # Must NOT forward "standard" to LLMAdapterFactory - uses default provider
+        assert call_kwargs["provider"] == OperatorConstants.Classification.DEFAULT_PROVIDER
+
+    def test_unsupported_provider_raises_with_supported_list(self) -> None:
+        """An unsupported provider no longer falls back silently to litellm."""
+        config = {**_BASE_CONFIG, "provider": "bogus"}
+        with pytest.raises(ValueError, match="Unsupported provider 'bogus'") as exc_info:
+            StandardLLMClassificationAdapter.from_config(config)
+        assert "litellm" in str(exc_info.value)
+        assert "watsonx" in str(exc_info.value)
 
     def test_raises_when_provider_config_missing(self) -> None:
         config = {**_BASE_CONFIG, "provider_config": {}}
