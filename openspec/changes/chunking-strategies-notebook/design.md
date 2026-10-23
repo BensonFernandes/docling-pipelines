@@ -2,23 +2,23 @@
 
 ## Context
 
-The existing notebooks establish clear conventions: a top-level `CONFIG` dict for all tuneable parameters, a `check_services()` function for graceful service-availability detection, a parquet caching pattern to avoid re-running expensive steps, and `DocpipeFlowManager` as the programmatic entry point. This notebook follows all of those conventions.
+The existing notebooks establish clear conventions: a top-level settings cell with capitalised constants for all tuneable parameters, `DocpipeFlowManager` as the programmatic entry point, and a fixed `job_id` / `job_run_id` so output paths are predictable on re-runs. This notebook follows those conventions.
 
 Three decisions from the exploration phase shape the approach here and are not restated in the proposal:
 
 1. **Full pipeline (Option A)**: `ingest → extract → chunk` runs end-to-end. Bypassing extract would deprive the `hybrid` strategy of Docling's parsed document structure — the very thing that makes it distinct from `simple`.
-2. **`docs/` as corpus**: Three real markdown files from the project's own documentation serve as the corpus. This is self-referential in a way that's compelling for a blog post and avoids synthetic data that would make outputs uninteresting.
-3. **Qualitative retrieval signal, not labeled precision/recall**: No ground-truth annotations are required. Cosine similarity ranking + side-by-side display is sufficient to expose strategy differences and avoids the annotation maintenance burden that labeled metrics would introduce.
+2. **`docs/` as corpus**: Three real markdown files from the project's own documentation serve as the corpus. This is self-referential in a compelling way and avoids synthetic data that would make outputs uninteresting.
+3. **Qualitative retrieval signal, not labeled precision/recall**: No ground-truth annotations are required. Cosine similarity ranking with answer-phrase verification is sufficient to expose strategy differences and avoids the annotation maintenance burden that labeled metrics would introduce.
 
 ## Goals / Non-Goals
 
 **Goals:**
 - Define the notebook's cell group structure and data flow so implementation is mechanical
 - Specify the three corpus documents and the rationale for their selection
-- Define the three targeted retrieval queries and the structural property each is designed to expose
-- Specify the Ollama availability check pattern and which cell groups it gates
-- Specify the parquet cache location and re-run guard logic
+- Define the five targeted retrieval queries (four with expected answers, one negative control) and the structural property each is designed to expose
+- Specify the Ollama availability check pattern and the hard-stop behaviour it enforces
 - Specify how intra/inter-chunk coherence scores are computed and how they connect to the retrieval section
+- Record the semantic percentile selection decision
 
 **Non-Goals:**
 - Does not design new operators or modify `ChunkerOperator`
@@ -30,107 +30,123 @@ Three decisions from the exploration phase shape the approach here and are not r
 
 | File | Size | Structure | Strategy it highlights |
 |---|---|---|---|
-| `docs/operators/functional/chunker_readme.md` | ~8KB | Headers + parameter tables + JSON blocks | `hybrid` — tables and JSON blocks are structural nodes Docling preserves as units |
-| `docs/guides/FLOW_CONFIGURATION_GUIDE.md` | ~21KB | Dense prose + code examples | `semantic` — long narrative paragraphs with topic shifts at paragraph boundaries |
-| `docs/guides/PYTHON_API_GUIDE.md` | ~20KB | Mixed: procedures + code + prose | Baseline for all three — none has a clear advantage, good for comparison |
+| `docs/guides/FLOW_CONFIGURATION_GUIDE.md` | ~21KB | Dense prose + code examples | `simple` — long narrative with predictable sentence boundaries |
+| `docs/guides/PYTHON_API_GUIDE.md` | ~20KB | Mixed: procedures + code + prose | Baseline for all three — none has a clear advantage; good for comparison |
+| `docs/guides/SECURITY_BEST_PRACTICES.md` | ~14KB | Short-item lists + policy prose | `hybrid` — list items and policy blocks are structural nodes Docling preserves |
 
-**Why not `extract_operator_readme.md` or `CUSTOM_OPERATORS_GUIDE.md`?** Both are 40-50KB — too many chunks to read side-by-side in a notebook. The chosen files are large enough to produce meaningful chunk counts (15–40 chunks per strategy) without overwhelming cell output.
+**Why not `docs/operators/functional/chunker_readme.md`?** The chunker readme contains a large markdown table block (~4.7 KB as a single "sentence") that overflows Ollama's context window during semantic chunking, causing a 500 error. It was screened out during the exploration phase. The three chosen files all produce valid chunks from all three strategies.
 
-**Why not synthetic documents?** Real project docs make the blog post self-referential ("I asked docling-pipelines about its own chunking documentation") and produce outputs a reader can independently verify by looking at the source files.
+**Why not synthetic documents?** Real project docs make the blog post self-referential and produce outputs a reader can independently verify by looking at the source files.
 
-### D2: Three retrieval queries, each targeting a known structural property
+### D2: Five retrieval queries — four with answer phrases, one negative control
 
-| Query | Targets | Expected winner |
-|---|---|---|
-| `"How do I configure chunk_size and chunk_overlap?"` | A parameter table in `chunker_readme.md` | `hybrid` — table rows are preserved as discrete chunks |
-| `"What is the difference between in-memory and filesystem storage?"` | A conceptual paragraph mid-way through `FLOW_CONFIGURATION_GUIDE.md` | `semantic` — finds the paragraph boundary; `simple` may cut mid-sentence |
-| `"How do I use DocpipeFlowManager programmatically?"` | A procedure section in `PYTHON_API_GUIDE.md` | All three should surface it; useful as a baseline |
+| # | Query | Answer phrase (substring in right chunk) | Source file |
+|---|---|---|---|
+| 1 | JWT rotation policy | "immediately after any suspected exposure" | `SECURITY_BEST_PRACTICES.md` |
+| 2 | How is `job_id` generated? | "UUID v5" | `FLOW_CONFIGURATION_GUIDE.md` |
+| 3 | What happens when no `job_id` is passed? | "random UUID will be generated" | `FLOW_CONFIGURATION_GUIDE.md` |
+| 4 | How to disable embedded logging? | "configure_logging=False" | `PYTHON_API_GUIDE.md` |
+| 5 (control) | In-memory vs filesystem storage | _(no focused paragraph in corpus)_ | — |
 
-These queries are baked into the `CONFIG` dict so they are visible at a glance and easy to modify.
+Each query has a corresponding `answer_phrase` key in `RETRIEVAL_QUERIES`. The result table shows, for each query and strategy, the rank of the first top-3 chunk containing the answer phrase (or "not in top 3"). No expected winners are written into prose before running — the result table speaks for itself.
 
-### D3: Parquet caching pattern — one cache dir, force_ingest guard
+The control query (query 5) is expected to return no clean top-3 hit on any strategy. Its presence makes the summary honest: the retrieval comparison is not cherry-picked to show only queries where every strategy succeeds.
 
-The extract step writes parquet to `./notebook_cache/chunking_strategies/extracted/`. A cell at the top of the chunking section checks for the cache:
+### D3: No parquet cache — single fan-out flow with fixed job_id
 
-```python
-CACHE_DIR = Path("./notebook_cache/chunking_strategies/extracted")
-FORCE_REEXTRACT = False  # set True to re-run extraction
+There is no `notebook_cache/` directory and no `FORCE_REEXTRACT` flag. Instead:
 
-if CACHE_DIR.exists() and not FORCE_REEXTRACT:
-    print("Using cached extraction — set FORCE_REEXTRACT=True to re-run")
-else:
-    # run ingest + extract flow
-```
+- A single `DocpipeFlowManager` flow runs `ingest → extract → chunk_simple / chunk_hybrid / chunk_semantic` in one call.
+- `force_ingest: true` is set on the ingest node so a re-run with the same `job_id` always ingests fresh rather than silently producing zero rows.
+- `job_id` and `job_run_id` are fixed constants (`FLOW_JOB_ID`, `FLOW_JOB_RUN_ID`) in the settings cell, making output parquet paths predictable: `data/<FLOW_JOB_ID>/<FLOW_JOB_RUN_ID>/data/chunk_<x>_0/0/output.parquet`.
+- Re-running the flow cell overwrites the existing output folder (same paths, same parquet schema). This is equivalent to the old cache pattern but simpler — no separate cache dir, no cache-guard logic.
 
-This mirrors the pattern in `06_rag_pipeline.ipynb`. The `FORCE_REEXTRACT` flag is in `CONFIG` so it's visible alongside other tuneable parameters. Cache dir is `.gitignore`-listed (already covered by the existing `notebook_cache/` entry if present; otherwise noted in the notebook's setup cell).
+**Why `force_ingest: true`?** Verified empirically (`.bob/tmp/noforce.py`): without it, a second run with the same `job_id` produces `ingest_0 = 0 rows` while leaving stale chunk parquet in place from the first run. `force_ingest` prevents silent stale-data use.
 
-### D4: Ollama availability check gates two cell groups
+### D4: Ollama is REQUIRED — early hard stop, no graceful fallback
 
-`check_ollama()` makes a lightweight `GET /api/tags` request to `http://localhost:11434`. The result sets a `OLLAMA_AVAILABLE` boolean that gates:
+Ollama with `nomic-embed-text` is a hard prerequisite. The notebook does not run partially without it. This means:
 
-- **Cell group C**: `semantic` chunking flow (requires Ollama embeddings during chunking)
-- **Cell group D**: semantic coherence metrics + retrieval signal (both use `nomic-embed-text`)
+- One early code cell (immediately after the imports cell) checks `GET /api/embed` (a lightweight POST with a one-word payload) against `OLLAMA_HOST`.
+- If the check fails (connection refused, model not found, or HTTP error), the cell raises `RuntimeError` with a formatted message that includes the exact commands to start Ollama and pull the model:
+  ```
+  Ollama not available at http://localhost:11434
+  To fix, run:
+    ollama serve
+    ollama pull nomic-embed-text
+  ```
+- `raise RuntimeError(...)` is Ruff-safe. `raise SystemExit` and `%%script false` are explicitly forbidden.
+- There is no `OLLAMA_AVAILABLE` boolean, no `if not OLLAMA_AVAILABLE:` guard in any subsequent cell, and no per-cell skip message. Every cell after the check assumes Ollama is up.
 
-Cell groups A (ingest+extract) and B (simple + hybrid chunking + structural metrics) always run regardless of Ollama availability. This means the notebook is fully runnable without Ollama — readers get the structural comparison and side-by-side text excerpts even in a no-Ollama environment.
-
-The Ollama model used for coherence and retrieval is `nomic-embed-text` — the same model already used in `04_embeddings_vectordb.ipynb` and `06_rag_pipeline.ipynb`, so no new `ollama pull` instruction is needed beyond what existing notebooks already document.
+This design was chosen because half-empty tables (structural metrics only, with blank rows for semantic) are misleading and confusing for a reader. A clean hard stop with a clear fix message is better UX.
 
 ### D5: Embedding model — `nomic-embed-text` for consistency
 
-The embedding model for semantic chunking, coherence scoring, and retrieval is `nomic-embed-text` (768 dimensions). Higher-quality alternatives exist (`mxbai-embed-large`, `granite-embedding`) but `nomic-embed-text` is already the standard across `04_embeddings_vectordb.ipynb` and `06_rag_pipeline.ipynb`. A reader who has run any existing notebook already has it pulled — adding a new model pull to prerequisites raises the barrier to entry for a notebook whose primary purpose is comparison, not embedding quality benchmarking. The coherence and retrieval differences between strategies are structural and large enough to be visible at `nomic-embed-text` quality.
+The embedding model for semantic chunking, coherence scoring, and retrieval is `nomic-embed-text` (768 dimensions). It is already the standard across `04_embeddings_vectordb.ipynb` and `06_rag_pipeline.ipynb`. A reader who has run any existing notebook already has it pulled.
 
 ### D6: Coherence score computation — pure numpy, no new dependencies
 
-Intra-chunk similarity for a single chunk is computed as the mean pairwise cosine similarity of sentence-level embeddings within that chunk. Inter-chunk similarity for adjacent chunk pairs is their direct cosine similarity.
+Intra-chunk similarity for a single chunk: mean pairwise cosine similarity of sentence-level embeddings within that chunk. Inter-chunk similarity for adjacent pairs: direct cosine similarity between adjacent chunk mean-embeddings.
 
 ```
 intra_sim(chunk)  = mean(cosine(embed(s_i), embed(s_j)) for all sentence pairs i≠j)
 inter_sim(c_i, c_{i+1}) = cosine(mean_embed(c_i), mean_embed(c_{i+1}))
 ```
 
-Sentence splitting uses Python's `str.split('. ')` — deliberately simple. The goal is a readable score, not linguistic precision. A markdown-aware sentence splitter would add a dependency and complexity without meaningfully changing the comparison story.
-
-All embedding and cosine similarity work uses `numpy` (available in the dev environment via `uv sync --extra notebooks`). No new packages are introduced.
+Sentence splitting uses `re.split(r'(?<=[.?!])\s+', text)` — deliberately simple. All work uses `numpy` (available in the dev environment via `uv sync --extra notebooks`). No new packages are introduced. Embeddings are computed once and reused across coherence and retrieval.
 
 ### D7: Cell group structure
 
 ```
-Cell Group 0: Setup + imports + CONFIG dict + check_ollama()
-Cell Group A: Ingest + Extract flow  [cache check → run if needed → save parquet]
-Cell Group B: Simple chunking + Hybrid chunking + Structural metrics table
-              [always runs; no Ollama required]
-Cell Group C: Semantic chunking  [skipped with message if OLLAMA_AVAILABLE=False]
-Cell Group D: Semantic coherence scores (intra + inter) for all three strategies
-              Qualitative retrieval: 3 queries × 3 strategies → top-3 chunks side-by-side
-              [skipped with message if OLLAMA_AVAILABLE=False]
-Cell Group E: Strategy decision guide table + config quick-reference
-              [always runs; pure markdown]
+§0  Intro + strategy overview table + steps/tech/where-it-runs table
+§1  Setup: imports, settings (capitalised constants), Ollama hard-stop check
+§2  The corpus documents (small table: file, topic, size)
+§3  Build and run ONE fan-out flow:
+      ingest → extract → chunk_simple / chunk_hybrid / chunk_semantic
+      (ASCII diagram; fixed job_id/job_run_id; force_ingest:true)
+§4  Inspect the chunks — side-by-side, same JWT-rotation passage, all 3 strategies
+§5  Structural metrics table (chunk count, mean chars, std dev, max chunk)
+§6  Coherence scores (intra + inter per strategy per doc; "closeness score" framing)
+§7  Retrieval — 5 queries × 3 strategies; answer-phrase rank table;
+      returned chunk text for answer-phrase queries
+§8  Narrative: what the numbers mean for each strategy
+§9  Decision guide table + config quick-reference for each strategy
 ```
-
-The decision guide table in Cell Group E is the "take-home" section — it maps document type to recommended strategy and is the most directly useful output for the blog post's audience.
 
 ### D8: Pre-commit compliance for notebook code cells
 
 Four pre-commit hooks run on `.ipynb` files:
 
-- **`check-json`**: The notebook file must be valid JSON. Generated automatically by Jupyter — no special action needed.
-- **`nbstripout`**: Strips all cell outputs before staging. Workflow: run all cells, then `git add` (hook strips outputs), then `git commit -s`. Never commit with outputs present.
-- **`nbqa-ruff-check --nbqa-dont-skip-bad-cells`**: Ruff lints every Python code cell, including cells that would raise at runtime. Implications:
-  - All imports must be used in the cell they appear in, or must live in the shared setup cell (Cell Group 0)
-  - No bare `except:` clauses — always catch a specific exception type
-  - No unused variables (assign results to `_` if intentionally unused)
-  - The graceful-skip pattern for Ollama-unavailable cells must use `if/else` blocks, not `raise SystemExit` or magic commands that bypass linting
-- **`check-added-large-files` (3000KB limit)**: The stripped notebook (no outputs) must stay under 3MB. At ~20–40 chunks per strategy × 3 strategies, the notebook JSON will be well under this limit.
+- **`check-json`**: The notebook file must be valid JSON.
+- **`nbstripout`**: Strips all cell outputs before staging.
+- **`nbqa-ruff-check --nbqa-dont-skip-bad-cells`**: Ruff lints every Python code cell. Key implications:
+  - All imports consolidated in the setup cell (§1)
+  - No bare `except:` — always catch a specific exception type
+  - No unused variables
+  - Use `itertools.pairwise` instead of `zip(x, x[1:])` (Ruff B007 / B905 flag)
+  - `raise RuntimeError(...)` for the Ollama hard stop — **not** `raise SystemExit`, **not** `%%script false`
+  - The old `if not OLLAMA_AVAILABLE: ... else: ...` gating pattern is **removed** — it is no longer present in the notebook
+- **`check-added-large-files` (3000KB limit)**: The stripped notebook must stay under 3MB.
+- **`detect-secrets`**: No credentials, tokens, or API keys may appear in cell source.
 
-The canonical Ollama-skip pattern (Ruff-safe):
-```python
-if not OLLAMA_AVAILABLE:
-    print("Skipping — Ollama unavailable. Run: ollama pull nomic-embed-text")
-else:
-    # actual cell logic here
-```
+### D9: Semantic chunker — percentile 45 chosen via chunk-size sweep
 
-### D9: Notebook numbering — `08_`
+The semantic chunker's `breakpoint_threshold_amount` controls how aggressively it splits: lower = more splits = smaller chunks.
+
+A sweep over the three corpus documents was run at percentile values 35, 45, 55, 65, 75, 85, 95 (`.bob/tmp/sweep.py`). Mean chunk sizes (chars) per document at key values:
+
+| Percentile | FLOW_CONFIG | PYTHON_API | SECURITY |
+|---|---|---|---|
+| 95 (default) | 5148 | 6518 | 2256 |
+| 55 | 857 | 1303 | 355 |
+| 45 | 735 | 1028 | 287 |
+| 35 | 623 | 888 | 245 |
+
+**Decision: percentile = 45.** Mean-of-means 683 chars, close to `simple` at 750. This makes the three strategies directly comparable in the structural metrics table without one strategy dominating by chunk count alone.
+
+Note: a single code block in `PYTHON_API_GUIDE.md` (~5 KB, no sentence punctuation) produces one very large chunk (3.9–5.7 KB) at every percentile ≤ 55. The semantic splitter splits on sentence boundaries; a code block has none, so it cannot be split. The notebook calls this out explicitly.
+
+### D10: Notebook numbering — `08_`
 
 Existing notebooks are `01` through `07`. The new file is `08_chunking_strategies.ipynb`. If a future notebook is added at `08` before this is merged, the number should be bumped — noted as a minor merge-time check in tasks.
 
@@ -138,9 +154,9 @@ Existing notebooks are `01` through `07`. The new file is `08_chunking_strategie
 
 | Risk | Mitigation |
 |---|---|
-| `hybrid` chunking on `.md` files produces same output as `simple` if Docling's markdown parser treats all content as flat text | Verify during implementation by printing chunk metadata; `chunker_readme.md` has explicit tables that should parse as structured nodes. If hybrid and simple produce identical chunks on all three docs, replace one corpus file with a richer structured doc (e.g., an operator readme with more table density). |
-| Intra-chunk similarity is low across all strategies because `docs/` prose is already fairly homogeneous | The comparison is still valid — the point is relative difference, not absolute score. Even if all three score 0.7+, hybrid should consistently score higher on `chunker_readme.md` than simple. If scores are indistinguishable, increase corpus size or switch to a more diverse doc. |
-| `nomic-embed-text` embedding calls are slow for large chunk sets (30–40 chunks × 3 strategies = 90–120 embed calls) | Each embed call is ~50–100ms on a warm Ollama instance — total ~5–12 seconds. Acceptable for a notebook. If slow, add a progress indicator. |
+| `hybrid` chunking on `.md` files produces same output as `simple` if Docling's markdown parser treats all content as flat text | Verified during implementation: the three chosen corpus files show distinct chunk shapes between `simple` and `hybrid`. |
+| Intra-chunk similarity is low across all strategies because `docs/` prose is already homogeneous | The comparison is relative, not absolute. Strategy differences are structural and visible even when absolute scores are similar. |
+| `nomic-embed-text` embedding calls are slow for large chunk sets | Each embed call is ~50–100ms on a warm Ollama instance. Notebook trims inputs to `max_embed_chars=4000` to avoid Ollama's ~7KB per-request limit. |
 | Notebook numbering conflict at merge time | Tasks include a check: confirm no `08_` notebook was added since this change was branched. |
 
 ## Open Questions

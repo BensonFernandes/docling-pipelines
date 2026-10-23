@@ -7,17 +7,16 @@ The `ChunkerOperator` supports three distinct strategies — `simple`, `semantic
 ## What Changes
 
 - Add a new Jupyter notebook `examples/notebooks/08_chunking_strategies.ipynb` that:
-  - Runs the full `ingest → extract → chunk` pipeline (Option A) using three selected markdown files from `docs/` as the corpus
-  - Executes all three chunking strategies (`simple`, `semantic`, `hybrid`) on the same extracted documents
-  - Caches extracted parquet output after the extract step so chunking cells can be re-run cheaply
+  - Runs the full `ingest → extract → chunk` pipeline (Option A) using three selected markdown files from `docs/guides/` as the corpus: `FLOW_CONFIGURATION_GUIDE.md`, `PYTHON_API_GUIDE.md`, and `SECURITY_BEST_PRACTICES.md`
+  - Executes all three chunking strategies (`simple`, `semantic`, `hybrid`) in a single fan-out flow (`ingest → extract → chunk_simple / chunk_hybrid / chunk_semantic`) with a fixed `job_id` and `force_ingest: true`
+  - Requires Ollama with `nomic-embed-text` — **the notebook stops with a `RuntimeError` and instructions if Ollama is unreachable** (no partial run, no graceful fallback)
   - Evaluates each strategy across three progressive metric classes:
-    - **Structural metrics** (no Ollama required): chunk count, avg size, size std deviation, overlap ratio — answers "what did the chunker do?"
-    - **Semantic coherence metrics** (requires Ollama): intra-chunk cosine similarity (do sentences within a chunk belong together?) and inter-chunk cosine similarity (are adjacent chunks distinct from each other?) — answers "were the splits semantically meaningful?"
-    - **Qualitative retrieval signal** (requires Ollama): for 3 targeted queries, rank all chunks by cosine similarity and show the top-3 results per strategy side-by-side — answers "does this strategy surface the right content?"
+    - **Structural metrics** (chunk count, avg size, std deviation, max chunk size) — answers "what did the chunker do?"
+    - **Semantic coherence metrics** (intra-chunk cosine similarity and inter-chunk cosine similarity using `nomic-embed-text`) — answers "were the splits semantically meaningful?"
+    - **Qualitative retrieval signal**: for 5 queries (four with known answer phrases, one negative control), rank all chunks by cosine similarity and show the first top-3 rank containing the answer phrase per strategy — answers "does this strategy surface the right content?"
   - Ties retrieval results back to coherence scores so readers can see *why* one strategy retrieves better, not just that it does
-  - Semantic coherence and retrieval cells share the same Ollama embedding call — no double cost
+  - Semantic coherence and retrieval cells share the same Ollama embedding pass — no double cost
   - Includes a strategy decision guide table and config quick-reference section
-  - Gracefully skips `semantic` chunking and all Ollama-dependent cells (coherence + retrieval) when Ollama is unavailable; structural metrics always run
 - Update `examples/notebooks/README.md` to register the new notebook in the available-notebooks table
 
 ## Capabilities
@@ -37,7 +36,7 @@ None. No existing spec-level requirements change.
 - **Layer affected:** backend-only (Python examples, no frontend changes)
 - **Files added:** `examples/notebooks/08_chunking_strategies.ipynb`
 - **Files modified:** `examples/notebooks/README.md`
-- **Dependencies:** Requires Ollama (for `semantic` chunking and in-memory retrieval comparison); `simple` and `hybrid` (via Docling library) run without Ollama
+- **Dependencies:** Requires Ollama with `nomic-embed-text` (hard prerequisite — the notebook halts with a clear error and fix instructions if Ollama is unreachable)
 - **No operator code changes**, no API route changes, no storage adapter changes
 
 ## Non-goals
