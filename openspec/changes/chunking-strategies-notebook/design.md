@@ -104,7 +104,7 @@ Sentence splitting uses `text.split(". ")`, dropping fragments of 20 characters 
 §3  Build and run ONE fan-out flow:
       ingest → extract → chunk_simple / chunk_hybrid / chunk_semantic
       (ASCII diagram; fixed job_id/job_run_id; force_ingest:true)
-§4  Inspect the chunks — side-by-side, same JWT-rotation passage, all 3 strategies
+§4  Inspect the chunks — same JWT-rotation passage, all 3 strategies stacked vertically
 §5  Structural metrics table (chunk count, mean chars, std dev, max chunk)
 §6  Coherence scores (intra + inter per strategy per doc; "closeness score" framing)
 §7  Retrieval — 5 queries × 3 strategies; answer-phrase rank table;

@@ -12,10 +12,10 @@
 
 ## 3. Inspect + structural metrics [backend]
 
-- [x] 3.1 Implement the chunk-inspect cell (§4): pick the JWT-rotation passage in `SECURITY_BEST_PRACTICES.md` using a `chunk_with_phrase(strategy, doc_name, phrase)` helper; display the chunk text from all three strategies side-by-side. Verify by running the cell — each strategy must return at least one hit for the phrase.
+- [x] 3.1 Implement the chunk-inspect cell (§4): pick the JWT-rotation passage in `SECURITY_BEST_PRACTICES.md` using a `chunk_with_phrase(strategy, doc_name, phrase)` helper; display the chunk text from all three strategies, one block per strategy. Verify by running the cell — each strategy must return at least one hit for the phrase.
 - [x] 3.2 Implement the structural metrics table (§5): for each strategy and document compute chunk count, mean chunk chars, std deviation, max chunk chars, and approximate overlap ratio. Display as a `pandas.DataFrame`. Verify the table renders with all three strategies as rows (or grouped rows) and all metric columns present.
 - [x] 3.3 Add "Points to notice" markdown bullets after the structural metrics table explaining what patterns to look for (`simple` capped at `SIMPLE_CHUNK_SIZE`, `hybrid` with smaller and variable chunks, `semantic` with occasionally very large chunks due to code blocks that have no sentence boundaries). Verify the cell is markdown only and contains substantive prose.
-- [x] 3.4 Add a side-by-side text excerpt cell showing the JWT-rotation passage chunks from all three strategies. Render with `display(Markdown(...))` containing an HTML table. Verify the output visibly shows boundary differences between strategies.
+- [x] 3.4 Add a display cell showing the JWT-rotation passage chunks from all three strategies. Render with `display(HTML(...))`, one bordered block per strategy stacked vertically (a three-column table was unreadable). Verify the output visibly shows boundary differences between strategies.
 
 ## 4. Ollama hard-stop check [backend]
 
