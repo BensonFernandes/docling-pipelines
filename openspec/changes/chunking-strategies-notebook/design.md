@@ -58,7 +58,7 @@ There is no `notebook_cache/` directory and no `FORCE_REEXTRACT` flag. Instead:
 
 - A single `DocpipeFlowManager` flow runs `ingest → extract → chunk_simple / chunk_hybrid / chunk_semantic` in one call.
 - `force_ingest: true` is set on the ingest node so a re-run with the same `job_id` always ingests fresh rather than silently producing zero rows.
-- `job_id` and `job_run_id` are fixed constants (`FLOW_JOB_ID`, `FLOW_JOB_RUN_ID`) in the settings cell, making output parquet paths predictable: `data/<FLOW_JOB_ID>/<FLOW_JOB_RUN_ID>/data/chunk_<x>_0/0/output.parquet`.
+- `job_id` and `job_run_id` are fixed constants (`JOB_ID`, `JOB_RUN_ID`) in the settings cell, making output parquet paths predictable: `data/<JOB_ID>/<JOB_RUN_ID>/data/chunk_<x>_0/0/output.parquet`.
 - Re-running the flow cell overwrites the existing output folder (same paths, same parquet schema). This is equivalent to the old cache pattern but simpler — no separate cache dir, no cache-guard logic.
 
 **Why `force_ingest: true`?** Verified empirically (`.bob/tmp/noforce.py`): without it, a second run with the same `job_id` produces `ingest_0 = 0 rows` while leaving stale chunk parquet in place from the first run. `force_ingest` prevents silent stale-data use.
@@ -67,8 +67,8 @@ There is no `notebook_cache/` directory and no `FORCE_REEXTRACT` flag. Instead:
 
 Ollama with `nomic-embed-text` is a hard prerequisite. The notebook does not run partially without it. This means:
 
-- One early code cell (immediately after the imports cell) checks `GET /api/embed` (a lightweight POST with a one-word payload) against `OLLAMA_HOST`.
-- If the check fails (connection refused, model not found, or HTTP error), the cell raises `RuntimeError` with a formatted message that includes the exact commands to start Ollama and pull the model:
+- One early code cell (after the imports and settings cells) calls `GET /api/tags` against `OLLAMA_HOST` and checks that `EMBEDDING_MODEL` is installed.
+- If the check fails (server unreachable or model not installed), the cell raises `RuntimeError` with a message containing the matching command: `ollama serve` when the server is unreachable, `ollama pull nomic-embed-text` when the model is missing. For example:
   ```
   Ollama not available at http://localhost:11434
   To fix, run:
@@ -93,7 +93,7 @@ intra_sim(chunk)  = mean(cosine(embed(s_i), embed(s_j)) for all sentence pairs i
 inter_sim(c_i, c_{i+1}) = cosine(mean_embed(c_i), mean_embed(c_{i+1}))
 ```
 
-Sentence splitting uses `re.split(r'(?<=[.?!])\s+', text)` — deliberately simple. All work uses `numpy` (available in the dev environment via `uv sync --extra notebooks`). No new packages are introduced. Embeddings are computed once and reused across coherence and retrieval.
+Sentence splitting uses `text.split(". ")`, dropping fragments of 20 characters or fewer — deliberately simple. All work uses `numpy` (available in the dev environment via `uv sync --extra notebooks`). No new packages are introduced. Embeddings are computed once and reused across coherence and retrieval.
 
 ### D7: Cell group structure
 
@@ -109,8 +109,8 @@ Sentence splitting uses `re.split(r'(?<=[.?!])\s+', text)` — deliberately simp
 §6  Coherence scores (intra + inter per strategy per doc; "closeness score" framing)
 §7  Retrieval — 5 queries × 3 strategies; answer-phrase rank table;
       returned chunk text for answer-phrase queries
-§8  Narrative: what the numbers mean for each strategy
-§9  Decision guide table + config quick-reference for each strategy
+    Narrative (after the returned-chunk cells): what the numbers mean for each strategy
+§8  Choosing a strategy: decision table + config quick-reference
 ```
 
 ### D8: Pre-commit compliance for notebook code cells
