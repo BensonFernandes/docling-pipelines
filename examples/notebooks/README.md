@@ -212,7 +212,7 @@ export PYTHONPATH="$(pwd)/src:${PYTHONPATH}"
 #### 8. [08_chunking_strategies.ipynb](08_chunking_strategies.ipynb)
 **Compare `simple`, `semantic` and `hybrid` chunking on real documents**
 
-- Runs one flow (Ingest → Extract → three chunker nodes) on three repository docs
+- Runs one flow (Ingest → Extract → Branching → three chunker nodes) on three repository docs
 - Chunks the same documents with all three `ChunkerOperator` strategies
 - Structural metrics: chunk count, mean size, size spread, overlap ratio
 - Semantic coherence metrics: intra-chunk and inter-chunk cosine similarity

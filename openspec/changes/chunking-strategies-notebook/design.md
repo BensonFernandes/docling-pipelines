@@ -56,10 +56,12 @@ The control query (query 5) is expected to return no clean top-3 hit on any stra
 
 There is no `notebook_cache/` directory and no `FORCE_REEXTRACT` flag. Instead:
 
-- A single `DocpipeFlowManager` flow runs `ingest → extract → chunk_simple / chunk_hybrid / chunk_semantic` in one call.
+- A single `DocpipeFlowManager` flow runs `ingest → extract → split (branching) → chunk_simple / chunk_hybrid / chunk_semantic` in one call.
 - `force_ingest: true` is set on the ingest node so a re-run with the same `job_id` always ingests fresh rather than silently producing zero rows.
 - `job_id` and `job_run_id` are fixed constants (`JOB_ID`, `JOB_RUN_ID`) in the settings cell, making output parquet paths predictable: `data/<JOB_ID>/<JOB_RUN_ID>/data/chunk_<x>_0/0/output.parquet`.
 - Re-running the flow cell overwrites the existing output folder (same paths, same parquet schema). This is equivalent to the old cache pattern but simpler — no separate cache dir, no cache-guard logic.
+
+**Why a `branching` node?** The fan-out could also be written as three nodes that each list `extract` in `depends_on`. An unconditional `branching` node (`branches: {to_simple: {}, to_hybrid: {}, to_semantic: {}}`) is used instead because it is the documented fan-out pattern, it makes the split visible as a node, and it shows readers the operator. Each branch receives a full copy of the table; chunkers depend on `split.to_<strategy>`. Verified with `.bob/tmp/branch_proto.py`: all three chunkers produced chunk counts identical to the plain `depends_on` version. The `split` node also writes `split_0..2` output folders that the notebook ignores.
 
 **Why `force_ingest: true`?** Verified empirically (`.bob/tmp/noforce.py`): without it, a second run with the same `job_id` produces `ingest_0 = 0 rows` while leaving stale chunk parquet in place from the first run. `force_ingest` prevents silent stale-data use.
 
@@ -102,7 +104,7 @@ Sentence splitting uses `text.split(". ")`, dropping fragments of 20 characters 
 §1  Setup: imports, settings (capitalised constants), Ollama hard-stop check
 §2  The corpus documents (small table: file, topic, size)
 §3  Build and run ONE fan-out flow:
-      ingest → extract → chunk_simple / chunk_hybrid / chunk_semantic
+      ingest → extract → split (branching, 3 unconditional branches) → chunk_simple / chunk_hybrid / chunk_semantic
       (ASCII diagram; fixed job_id/job_run_id; force_ingest:true)
 §4  Inspect the chunks — same JWT-rotation passage, all 3 strategies stacked vertically
 §5  Structural metrics table (chunk count, mean chars, std dev, max chunk)

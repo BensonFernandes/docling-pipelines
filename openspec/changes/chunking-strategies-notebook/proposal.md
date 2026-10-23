@@ -8,7 +8,7 @@ The `ChunkerOperator` supports three distinct strategies — `simple`, `semantic
 
 - Add a new Jupyter notebook `examples/notebooks/08_chunking_strategies.ipynb` that:
   - Runs the full `ingest → extract → chunk` pipeline (Option A) using three selected markdown files from `docs/guides/` as the corpus: `FLOW_CONFIGURATION_GUIDE.md`, `PYTHON_API_GUIDE.md`, and `SECURITY_BEST_PRACTICES.md`
-  - Executes all three chunking strategies (`simple`, `semantic`, `hybrid`) in a single fan-out flow (`ingest → extract → chunk_simple / chunk_hybrid / chunk_semantic`) with a fixed `job_id` and `force_ingest: true`
+  - Executes all three chunking strategies (`simple`, `semantic`, `hybrid`) in a single fan-out flow (`ingest → extract → split (branching) → chunk_simple / chunk_hybrid / chunk_semantic`) with a fixed `job_id` and `force_ingest: true`
   - Requires Ollama with `nomic-embed-text` — **the notebook stops with a `RuntimeError` and instructions if Ollama is unreachable** (no partial run, no graceful fallback)
   - Evaluates each strategy across three progressive metric classes:
     - **Structural metrics** (chunk count, avg size, std deviation, max chunk size) — answers "what did the chunker do?"
