@@ -2,7 +2,7 @@
 
 ## Context
 
-See `proposal.md` for motivation and `specs/keyword-count-operator/spec.md` for requirements. Facts about the current
+See `proposal.md` for motivation and `specs/backend/keyword-count-operator/spec.md` for requirements. Facts about the current
 codebase that shape the approach:
 
 - Operators subclass `AbstractOperator`. `quality/doc_quality.py` is the closest precedent on `main`: config parsed in
