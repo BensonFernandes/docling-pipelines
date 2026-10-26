@@ -3441,6 +3441,34 @@ assets_management:
 
 **Note**: The `data_backend` parameter in the operator's flow config controls where PyArrow table data is stored, and is independent of the metadata/attachment backend in the YAML.
 
+### OpenLineage Hexagonal Architecture Pattern
+
+Optional data lineage lives in `src/docpipe/core/lineage/` and follows the same ports-and-adapters layout as job management. It is off unless `DOCPIPE_LINEAGE_ENABLED=true`, and it needs the `lineage` extra.
+
+```
+AbstractOrchestrator ──_notify_observer()──> ExecutionLifecycleObserverPort
+                                                      │ implemented by
+                                          OpenLineageExecutionObserver   (when to emit, by mode)
+                                                      │ calls
+                                                LineageService           (what each event contains)
+                                                      │ calls
+                                           LineagePublisherPort
+                                         ┌────────────┴────────────┐
+                          OpenLineagePublisherAdapter      NoOpLineagePublisherAdapter
+                          (openlineage-python SDK)         (fallback / development)
+                                         │
+                              Console / File / HTTP transport
+```
+
+- **Wiring**: `OrchestratorFactory` calls `lineage_factory.create_lineage_observer()`, which returns `None` when lineage is disabled, so a disabled run adds no overhead. If `openlineage-python` is missing or fails to initialise, the factory logs a warning and falls back to the no-op publisher.
+- **Modes**: `flow` emits one job per run. `operator` also emits a child run per DAG node, linked to the flow run through the `parent` run facet.
+- **Dataset identity**: `dataset_naming.get_dataset_info()` maps an adapter config to an OpenLineage `(namespace, name)`. Sources and sinks share the rules, and inter-operator tables use the `inmemory://` namespace, so a node's output matches the next node's input and the backend can draw the edge.
+- **Credential safety**: the service strips credential keys from flow definitions and operator metadata before building any facet.
+- **Failure isolation**: observer errors are logged as warnings and the flow continues, unless `DOCPIPE_LINEAGE_STRICT=true`.
+- **Distributed runs**: Prefect batch subflows rebuild the observer from environment variables, so the `DOCPIPE_LINEAGE_*` and `OPENLINEAGE__*` variables must be set in the worker environment (see [Advanced Configuration](docs/guides/ADVANCED_CONFIGURATION.md#data-lineage-openlineage)).
+
+See the [OpenLineage Integration Guide](docs/integrations/openlineage/OPENLINEAGE_GUIDE.md) for configuration, emitted events, custom facets, and adding a custom publisher.
+
 ## Deployment Patterns
 
 Docling Pipelines supports multiple deployment patterns to accommodate different operational requirements, from local development to enterprise-scale production deployments.
